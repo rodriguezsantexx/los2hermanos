@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0057FF;
+  --color-primary-hover: #0046CC;
+  --color-accent: #FFD83D;
+  --color-accent-hover: #E6C237;
+  --color-background: #F7F8FA;
+  --color-foreground: #111827;
+  --color-muted: #6B7280;
+  --color-success: #10B981;
+  --color-error: #EF4444;
+  --color-warning: #F59E0B;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+}
+
+/* Custom utility classes para mantener el HTML limpio */
+@layer utilities {
+  .btn-primary {
+    @apply bg-primary text-white font-medium py-3 px-6 rounded-xl shadow-md transition-all duration-200 active:scale-95 text-center flex items-center justify-center gap-2;
+  }
+  .btn-primary:hover {
+    @apply bg-primary-hover shadow-lg -translate-y-0.5;
+  }
+  
+  .btn-secondary {
+    @apply bg-accent text-gray-900 font-medium py-3 px-6 rounded-xl shadow-sm transition-all duration-200 active:scale-95 text-center flex items-center justify-center gap-2;
+  }
+  .btn-secondary:hover {
+    @apply bg-accent-hover shadow-md -translate-y-0.5;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-shadow duration-200;
+  }
+  .card:hover {
+    @apply shadow-md;
+  }
+  
+  .badge-success {
+    @apply bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded-full w-fit;
+  }
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800 text-xs font-semibold px-2.5 py-0.5 rounded-full w-fit;
+  }
+  .badge-error {
+    @apply bg-red-100 text-red-800 text-xs font-semibold px-2.5 py-0.5 rounded-full w-fit;
+  }
+}
