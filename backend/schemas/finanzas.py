@@ -1,0 +1,22 @@
+from decimal import Decimal
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class PagoCreate(BaseModel):
+    cliente_id: str
+    monto: Decimal = Field(gt=0)
+    metodo_pago: str = Field(min_length=2, max_length=50)
+
+
+class MovimientoCajaCreate(BaseModel):
+    tipo: Literal["Ingreso", "Egreso"]
+    monto: Decimal = Field(gt=0)
+    metodo_pago: str = Field(min_length=2, max_length=50)
+    descripcion: Optional[str] = None
+
+
+class AbonoCuentaCreate(BaseModel):
+    monto: Decimal = Field(gt=0)
+    metodo_pago: str = Field(min_length=2, max_length=50)

@@ -37,12 +37,23 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
     if not localidad_res.data:
         raise HTTPException(status_code=404, detail="Localidad no encontrada")
         
-    nombre_localidad = localidad_res.data[0]["nombre"].upper().replace(" ", "_")
-    rol_buscado = f"CHOFER_{nombre_localidad}"
+    nombre_localidad = localidad_res.data[0]["nombre"].upper()
+    # Las zonas nuevas se reparten entre las dos camionetas existentes.
+    zonas_por_chofer = {
+        "LA FALDA": "CHOFER_LA_FALDA",
+        "VALLE HERMOSO": "CHOFER_LA_FALDA",
+        "CASA GRANDE": "CHOFER_LA_FALDA",
+        "HUERTA GRANDE": "CHOFER_HUERTA_GRANDE",
+        "VILLA GIARDINO": "CHOFER_HUERTA_GRANDE",
+    }
+    rol_buscado = zonas_por_chofer.get(nombre_localidad)
+    if not rol_buscado:
+        raise HTTPException(status_code=400, detail=f"No hay una zona de reparto configurada para {nombre_localidad}")
     
-    chofer_res = supabase.table("usuarios").select("id").eq("rol_id", 
-        supabase.table("roles").select("id").eq("nombre", rol_buscado).execute().data[0]["id"]
-    ).execute()
+    rol_res = supabase.table("roles").select("id").eq("nombre", rol_buscado).execute()
+    if not rol_res.data:
+        raise HTTPException(status_code=409, detail=f"No existe el rol {rol_buscado} en Supabase")
+    chofer_res = supabase.table("usuarios").select("id").eq("rol_id", rol_res.data[0]["id"]).execute()
     
     chofer_id = chofer_res.data[0]["id"] if chofer_res.data else None
     
@@ -92,7 +103,7 @@ def get_pedidos(current_user=Depends(get_current_user)):
     # Si es ADMIN, ve todos. Si es Chofer, ve solo los suyos.
     rol = current_user.get("roles", {}).get("nombre")
     
-    query = supabase.table("pedidos").select("*, clientes(nombre, direccion), localidades(nombre)")
+    query = supabase.table("pedidos").select("*, clientes(nombre, direccion, telefono), localidades(nombre), detalle_pedidos(id, cantidad, precio_unitario, subtotal, productos(nombre))")
     if rol != "ADMIN":
         query = query.eq("chofer_id", current_user["id"])
         

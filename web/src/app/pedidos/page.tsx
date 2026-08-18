@@ -4,6 +4,8 @@ import { Fragment, useEffect, useState } from "react";
 
 type Producto = { id: string; nombre: string; precio: number; stock_actual: number };
 type Detalle = { producto: string; cantidad: number; precio: number };
+type Cliente = { id: string; nombre: string; localidad_id: string; localidades?: { nombre?: string } | null };
+type Localidad = { id: string; nombre: string };
 
 const pedidosIniciales = [
   { id: "#1059", cliente: "María Gómez", localidad: "Huerta Grande", total: "$15.000", estado: "Pendiente", pago: "A confirmar", detalles: [{ producto: "Garrafa 15kg", cantidad: 1, precio: 15000 }] },
@@ -24,12 +26,28 @@ export default function PedidosPage() {
   const [pago, setPago] = useState("A confirmar");
   const [productos, setProductos] = useState<Producto[]>([]);
   const [cargandoProductos, setCargandoProductos] = useState(true);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [localidades, setLocalidades] = useState<Localidad[]>([]);
+  const [puedeCrear, setPuedeCrear] = useState(false);
   const estados = ["Todos", "Pendiente", "Asignado", "En reparto", "Entregado"];
   const pedidosFiltrados = filtro === "Todos" ? pedidos : pedidos.filter(p => p.estado === filtro);
   const productoSeleccionado = productos.find(item => item.nombre === producto);
   const total = detalles.reduce((sum, item) => sum + item.precio * item.cantidad, 0) + (productoSeleccionado?.precio || 0) * cantidad;
 
   useEffect(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem("los2hermanos_user") || "null");
+      setPuedeCrear(user?.roles?.nombre === "ADMIN");
+    } catch {
+      setPuedeCrear(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!puedeCrear) {
+      setCargandoProductos(false);
+      return;
+    }
     fetch("http://localhost:8000/api/productos")
       .then(res => res.ok ? res.json() : Promise.reject(new Error("No se pudieron cargar los productos")))
       .then((data: Producto[]) => {
@@ -38,10 +56,24 @@ export default function PedidosPage() {
       })
       .catch(err => alert(err instanceof Error ? err.message : "Error al cargar productos"))
       .finally(() => setCargandoProductos(false));
-  }, []);
+  }, [puedeCrear]);
+
+  useEffect(() => {
+    if (!puedeCrear) return;
+    Promise.all([fetch("http://localhost:8000/api/clientes"), fetch("http://localhost:8000/api/clientes/localidades")])
+      .then(async ([clientesRes, localidadesRes]) => {
+        if (!clientesRes.ok || !localidadesRes.ok) throw new Error("No se pudieron cargar clientes y localidades");
+        const clientesData = await clientesRes.json() as Cliente[];
+        const localidadesData = await localidadesRes.json() as Localidad[];
+        setClientes(clientesData);
+        setLocalidades(localidadesData);
+      })
+      .catch(err => alert(err instanceof Error ? err.message : "Error al cargar datos del pedido"));
+  }, [puedeCrear]);
 
   const crearPedido = (event: React.FormEvent) => {
     event.preventDefault();
+    if (!puedeCrear) return;
     const detallesFinales = [...detalles, ...(productoSeleccionado ? [{ producto: productoSeleccionado.nombre, cantidad, precio: productoSeleccionado.precio }] : [])];
     if (!detallesFinales.length) return;
     const nuevo = {
@@ -70,10 +102,10 @@ export default function PedidosPage() {
     <main className="flex-1 p-4 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div><p className="text-sm font-bold uppercase tracking-wider text-primary">Operaciones</p><h2 className="text-3xl font-bold tracking-tight text-gray-900 mt-1">Pedidos</h2><p className="text-muted mt-1">Consultá y gestioná los pedidos de tus clientes.</p></div>
-        <button onClick={() => setModalAbierto(true)} className="btn-primary w-full md:w-auto"><span className="text-xl">+</span> Nuevo pedido</button>
+        {puedeCrear && <button onClick={() => setModalAbierto(true)} className="btn-primary w-full md:w-auto"><span className="text-xl">+</span> Nuevo pedido</button>}
       </header>
 
-      {modalAbierto && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"><form onSubmit={crearPedido} className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-xl"><div className="flex items-center justify-between"><h3 className="text-xl font-bold text-gray-900">Crear nuevo pedido</h3><button type="button" onClick={() => setModalAbierto(false)} className="text-2xl text-gray-400">×</button></div><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-gray-700">Cliente<select value={cliente} onChange={e => setCliente(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3"><option>María Gómez</option><option>Juan Pérez</option><option>Ana Rodríguez</option></select></label><label className="text-sm font-medium text-gray-700">Localidad<select value={localidad} onChange={e => setLocalidad(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3"><option>Huerta Grande</option><option>La Falda</option></select></label><label className="text-sm font-medium text-gray-700">Producto<select required disabled={cargandoProductos || productos.length === 0} value={producto} onChange={e => setProducto(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3">{productos.map(item => <option key={item.id} value={item.nombre}>{item.nombre} — ${item.precio.toLocaleString("es-AR")} ({item.stock_actual} disponibles)</option>)}</select></label><label className="text-sm font-medium text-gray-700">Cantidad<input type="number" min="1" max={productoSeleccionado?.stock_actual || undefined} required value={cantidad} onChange={e => setCantidad(Math.max(1, Number(e.target.value)))} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3" /></label></div><button type="button" onClick={agregarProducto} className="w-full rounded-xl border border-primary py-3 font-bold text-primary">+ Agregar producto al pedido</button>{detalles.length > 0 && <div className="space-y-2 rounded-xl bg-gray-50 p-3">{detalles.map((item, index) => <div key={index} className="flex justify-between text-sm"><span>{item.cantidad} × {item.producto}</span><button type="button" onClick={() => setDetalles(prev => prev.filter((_, i) => i !== index))} className="text-red-500">Quitar</button></div>)}</div>}<label className="block text-sm font-medium text-gray-700">Método de pago<select value={pago} onChange={e => setPago(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3"><option>A confirmar</option><option>Efectivo</option><option>Transferencia</option><option>Fiado</option></select></label><div className="flex items-center justify-between rounded-xl bg-blue-50 p-4"><span className="font-medium text-gray-600">Total estimado</span><strong className="text-2xl text-primary">${total.toLocaleString("es-AR")}</strong></div><div className="flex gap-3 pt-2"><button type="button" onClick={() => setModalAbierto(false)} className="flex-1 rounded-xl bg-gray-100 px-4 py-3 font-bold text-gray-600">Cancelar</button><button type="submit" disabled={cargandoProductos || productos.length === 0} className="btn-primary flex-1 disabled:opacity-50">Crear pedido</button></div></form></div>}
+      {puedeCrear && modalAbierto && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"><form onSubmit={crearPedido} className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-xl"><div className="flex items-center justify-between"><h3 className="text-xl font-bold text-gray-900">Crear nuevo pedido</h3><button type="button" onClick={() => setModalAbierto(false)} className="text-2xl text-gray-400">×</button></div><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-gray-700">Cliente<select value={cliente} onChange={e => setCliente(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3"><option>María Gómez</option><option>Juan Pérez</option><option>Ana Rodríguez</option></select></label><label className="text-sm font-medium text-gray-700">Localidad<select value={localidad} onChange={e => setLocalidad(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3"><option>La Falda</option><option>Huerta Grande</option><option>Valle Hermoso</option><option>Casa Grande</option><option>Villa Giardino</option></select></label><label className="text-sm font-medium text-gray-700">Producto<select required disabled={cargandoProductos || productos.length === 0} value={producto} onChange={e => setProducto(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3">{productos.map(item => <option key={item.id} value={item.nombre}>{item.nombre} — ${item.precio.toLocaleString("es-AR")} ({item.stock_actual} disponibles)</option>)}</select></label><label className="text-sm font-medium text-gray-700">Cantidad<input type="number" min="1" max={productoSeleccionado?.stock_actual || undefined} required value={cantidad} onChange={e => setCantidad(Math.max(1, Number(e.target.value)))} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3" /></label></div><button type="button" onClick={agregarProducto} className="w-full rounded-xl border border-primary py-3 font-bold text-primary">+ Agregar producto al pedido</button>{detalles.length > 0 && <div className="space-y-2 rounded-xl bg-gray-50 p-3">{detalles.map((item, index) => <div key={index} className="flex justify-between text-sm"><span>{item.cantidad} × {item.producto}</span><button type="button" onClick={() => setDetalles(prev => prev.filter((_, i) => i !== index))} className="text-red-500">Quitar</button></div>)}</div>}<label className="block text-sm font-medium text-gray-700">Método de pago<select value={pago} onChange={e => setPago(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3"><option>A confirmar</option><option>Efectivo</option><option>Transferencia</option><option>Fiado</option></select></label><div className="flex items-center justify-between rounded-xl bg-blue-50 p-4"><span className="font-medium text-gray-600">Total estimado</span><strong className="text-2xl text-primary">${total.toLocaleString("es-AR")}</strong></div><div className="flex gap-3 pt-2"><button type="button" onClick={() => setModalAbierto(false)} className="flex-1 rounded-xl bg-gray-100 px-4 py-3 font-bold text-gray-600">Cancelar</button><button type="submit" disabled={cargandoProductos || productos.length === 0} className="btn-primary flex-1 disabled:opacity-50">Crear pedido</button></div></form></div>}
 
       <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {["Pendiente", "Asignado", "En reparto", "Entregado"].map((estado, index) => <div key={estado} className={`card border-l-4 ${["border-warning", "border-primary", "border-accent", "border-success"][index]}`}><p className="text-xs font-bold uppercase tracking-wider text-muted">{estado === "En reparto" ? estado : `${estado}s`}</p><p className="mt-2 text-3xl font-black text-gray-900">{pedidos.filter(p => p.estado === estado).length}</p></div>)}

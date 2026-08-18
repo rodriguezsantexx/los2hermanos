@@ -1,23 +1,42 @@
 "use client";
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 export default function MobileNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(true);
+  const [userHomePath, setUserHomePath] = useState("/dashboard");
+
+  useEffect(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem("los2hermanos_user") || "null");
+      const role = user?.roles?.nombre;
+      setIsAdmin(role === "ADMIN");
+      setUserHomePath(role === "CHOFER_HUERTA_GRANDE" ? "/chofer/huerta-grande" : role === "CHOFER_LA_FALDA" ? "/chofer/la-falda" : "/dashboard");
+    } catch { setIsAdmin(false); setUserHomePath("/login"); }
+    setMounted(true);
+  }, []);
+
+  if (!mounted || pathname === "/login") return null;
+
+  const isDriverRoute = pathname.startsWith("/chofer/");
+  const showAdminMenu = !isDriverRoute && isAdmin;
+  const homePath = isDriverRoute ? (pathname.includes("huerta-grande") ? "/chofer/huerta-grande" : "/chofer/la-falda") : userHomePath;
+  const pedidosPath = isDriverRoute ? `${homePath}/pedidos` : "/pedidos";
 
   const mainMenu = [
-    { name: "Inicio", icon: "🏠", path: "/" },
-    { name: "Pedidos", icon: "📦", path: "/pedidos" },
-    { name: "Clientes", icon: "👥", path: "/clientes" },
+    { name: "Inicio", icon: "🏠", path: homePath },
+    { name: "Pedidos", icon: "📦", path: pedidosPath },
+    ...(showAdminMenu ? [{ name: "Clientes", icon: "👥", path: "/clientes" }] : []),
   ];
 
   const moreMenu = [
-    { name: "Productos", icon: "🛒", path: "/productos" },
-    { name: "Caja", icon: "💰", path: "/caja" },
-    { name: "Choferes", icon: "🚚", path: "/choferes" },
-    { name: "Ajustes", icon: "⚙️", path: "/configuracion" },
+    ...(showAdminMenu ? [{ name: "Productos", icon: "🛒", path: "/productos" }, { name: "Caja", icon: "💰", path: "/caja" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }, { name: "Métricas", icon: "📊", path: "/metricas" }, { name: "Choferes", icon: "🚚", path: "/choferes" }, { name: "Ajustes", icon: "⚙️", path: "/configuracion" }] : []),
   ];
 
   const isMoreActive = moreMenu.some(item => pathname.startsWith(item.path));
@@ -46,6 +65,7 @@ export default function MobileNav() {
                 <span className="text-[10px] font-bold leading-tight">{item.name}</span>
               </Link>
             ))}
+            <button type="button" onClick={() => { localStorage.removeItem("los2hermanos_access_token"); localStorage.removeItem("los2hermanos_user"); router.replace("/login"); }} className="flex w-[62px] flex-col items-center gap-1 text-center text-red-600"><span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl shadow-sm">↪</span><span className="text-[10px] font-bold leading-tight">Salir</span></button>
           </div>
         </>
       )}

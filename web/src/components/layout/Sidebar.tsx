@@ -2,17 +2,32 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import LogoutButton from '@/components/auth/LogoutButton';
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(true);
+  const [userHomePath, setUserHomePath] = useState("/dashboard");
+  useEffect(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem("los2hermanos_user") || "null");
+      const role = user?.roles?.nombre;
+      setIsAdmin(role === "ADMIN");
+      setUserHomePath(role === "CHOFER_HUERTA_GRANDE" ? "/chofer/huerta-grande" : role === "CHOFER_LA_FALDA" ? "/chofer/la-falda" : "/dashboard");
+    } catch { setIsAdmin(false); setUserHomePath("/login"); }
+    setMounted(true);
+  }, []);
+  if (!mounted || pathname === "/login") return null;
+  const isDriverRoute = pathname.startsWith("/chofer/");
+  const showAdminMenu = !isDriverRoute && isAdmin;
+  const homePath = isDriverRoute ? (pathname.includes("huerta-grande") ? "/chofer/huerta-grande" : "/chofer/la-falda") : userHomePath;
+  const pedidosPath = isDriverRoute ? `${homePath}/pedidos` : "/pedidos";
   const menu = [
-    { name: "Inicio", icon: "🏠", path: "/" },
-    { name: "Pedidos", icon: "📦", path: "/pedidos" },
-    { name: "Productos", icon: "🛒", path: "/productos" },
-    { name: "Clientes", icon: "👥", path: "/clientes" },
-    { name: "Caja", icon: "💰", path: "/caja" },
-    { name: "Choferes", icon: "🚚", path: "/choferes" },
-    { name: "Configuración", icon: "⚙️", path: "/configuracion" }
+    { name: "Inicio", icon: "🏠", path: homePath },
+    { name: "Pedidos", icon: "📦", path: pedidosPath },
+    ...(showAdminMenu ? [{ name: "Productos", icon: "🛒", path: "/productos" }, { name: "Clientes", icon: "👥", path: "/clientes" }, { name: "Caja", icon: "💰", path: "/caja" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }, { name: "Métricas", icon: "📊", path: "/metricas" }, { name: "Choferes", icon: "🚚", path: "/choferes" }, { name: "Configuración", icon: "⚙️", path: "/configuracion" }] : [])
   ];
 
   return (
@@ -45,6 +60,7 @@ export default function Sidebar() {
             <p className="text-xs text-muted">admin@sistema</p>
           </div>
         </div>
+        <LogoutButton />
       </div>
     </aside>
   );

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+type Localidad = { id: string; nombre: string };
 
 type Chat = {
   id: number;
@@ -29,6 +31,25 @@ export default function ClientesPage() {
   const [chatActivo, setChatActivo] = useState(chatsIniciales[0]);
   const [mostrarLista, setMostrarLista] = useState(false);
   const [mensaje, setMensaje] = useState("");
+  const [localidades, setLocalidades] = useState<Localidad[]>([]);
+  const [clienteModal, setClienteModal] = useState(false);
+  const [clienteForm, setClienteForm] = useState({ nombre: "", telefono: "", direccion: "", localidad_id: "" });
+
+  useEffect(() => {
+    fetch("http://localhost:8000/api/clientes/localidades")
+      .then(res => res.json())
+      .then((data: Localidad[]) => { setLocalidades(data); if (data[0]) setClienteForm(prev => ({ ...prev, localidad_id: data[0].id })); })
+      .catch(() => undefined);
+  }, []);
+
+  const crearCliente = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const res = await fetch("http://localhost:8000/api/clientes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(clienteForm) });
+    if (!res.ok) { const data = await res.json(); alert(data.detail || "No se pudo crear el cliente"); return; }
+    setClienteForm({ nombre: "", telefono: "", direccion: "", localidad_id: localidades[0]?.id || "" });
+    setClienteModal(false);
+    alert("Cliente creado correctamente");
+  };
 
   const cambiarModo = () => {
     const nuevoModo: Chat["modo"] = chatActivo.modo === "BOT" ? "MANUAL" : "BOT";
@@ -42,8 +63,10 @@ export default function ClientesPage() {
       <header className="mb-6">
         <p className="text-sm font-bold uppercase tracking-wider text-primary">WhatsApp</p>
         <h2 className="mt-1 text-3xl font-bold tracking-tight text-gray-900">Clientes</h2>
-        <p className="mt-1 text-muted">Administrá las conversaciones y elegí quién responde.</p>
+        <div className="flex items-center justify-between gap-4"><p className="mt-1 text-muted">Administrá las conversaciones y elegí quién responde.</p><button onClick={() => setClienteModal(true)} className="btn-primary whitespace-nowrap">+ Nuevo cliente</button></div>
       </header>
+
+      {clienteModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={crearCliente} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"><div className="flex items-center justify-between"><h3 className="text-xl font-bold">Nuevo cliente</h3><button type="button" onClick={() => setClienteModal(false)} className="text-2xl text-gray-400">×</button></div><input required placeholder="Nombre completo" value={clienteForm.nombre} onChange={e => setClienteForm({ ...clienteForm, nombre: e.target.value })} className="w-full rounded-lg border p-3" /><input placeholder="Teléfono" value={clienteForm.telefono} onChange={e => setClienteForm({ ...clienteForm, telefono: e.target.value })} className="w-full rounded-lg border p-3" /><input placeholder="Dirección" value={clienteForm.direccion} onChange={e => setClienteForm({ ...clienteForm, direccion: e.target.value })} className="w-full rounded-lg border p-3" /><select required value={clienteForm.localidad_id} onChange={e => setClienteForm({ ...clienteForm, localidad_id: e.target.value })} className="w-full rounded-lg border p-3">{localidades.map(localidad => <option key={localidad.id} value={localidad.id}>{localidad.nombre}</option>)}</select><div className="flex gap-3"><button type="button" onClick={() => setClienteModal(false)} className="flex-1 rounded-xl bg-gray-100 p-3 font-bold">Cancelar</button><button className="btn-primary flex-1">Guardar cliente</button></div></form></div>}
 
       <section className="flex min-h-[560px] flex-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
         <aside className={`w-full shrink-0 border-r border-gray-100 md:w-80 ${mostrarLista ? "block" : "hidden md:block"}`}>
