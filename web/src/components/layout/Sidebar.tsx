@@ -1,11 +1,14 @@
+"use client";
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export default function Sidebar() {
+  const pathname = usePathname();
   const menu = [
     { name: "Inicio", icon: "🏠", path: "/" },
     { name: "Pedidos", icon: "📦", path: "/pedidos" },
     { name: "Productos", icon: "🛒", path: "/productos" },
-    { name: "Stock", icon: "📊", path: "/stock" },
     { name: "Clientes", icon: "👥", path: "/clientes" },
     { name: "Caja", icon: "💰", path: "/caja" },
     { name: "Choferes", icon: "🚚", path: "/choferes" },
@@ -24,7 +27,7 @@ export default function Sidebar() {
           <Link 
             key={item.name} 
             href={item.path}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${item.name === 'Inicio' ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-600 hover:bg-gray-50 hover:text-primary font-medium'}`}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${pathname === item.path ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-600 hover:bg-gray-50 hover:text-primary font-medium'}`}
           >
             <span className="text-xl">{item.icon}</span>
             <span>{item.name}</span>

@@ -13,9 +13,9 @@ export default function Home() {
 
       {/* Métricas Principales */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-        <div className="card bg-primary text-white border-none shadow-lg shadow-primary/20">
+        <div className="card !bg-primary !text-white border-none shadow-lg shadow-primary/20">
           <p className="text-blue-200 font-medium text-sm tracking-wider">VENTAS</p>
-          <p className="text-3xl md:text-4xl font-black mt-2">$350.000</p>
+          <p className="text-white text-3xl md:text-4xl font-black mt-2 drop-shadow-sm">$350.000</p>
         </div>
         
         <div className="card">

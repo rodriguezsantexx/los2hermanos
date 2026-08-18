@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
+from typing import Literal
 from decimal import Decimal
 
 class ProductoBase(BaseModel):
@@ -15,11 +16,12 @@ class ProductoCreate(ProductoBase):
     pass
 
 class ProductoUpdate(BaseModel):
+    nombre: Optional[str] = None
     precio: Optional[Decimal] = None
     stock_minimo: Optional[int] = None
     estado: Optional[str] = None
 
 class StockMovimiento(BaseModel):
-    cantidad: int
-    tipo: str # Entrada, Salida
-    motivo: str
+    cantidad: int = Field(gt=0)
+    tipo: Literal["Entrada", "Salida"]
+    motivo: str = Field(min_length=1, max_length=100)
