@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException
 from schemas.user import UserLogin
 from database.connection import supabase, SUPABASE_URL, SUPABASE_KEY
 from supabase import create_client
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -25,4 +28,5 @@ def login(user: UserLogin):
     except HTTPException:
         raise
     except Exception:
+        logger.exception("Error de login para el usuario '%s'", user.username.strip())
         raise HTTPException(status_code=401, detail="Credenciales incorrectas o error en Supabase")

@@ -18,7 +18,7 @@ export default function Sidebar() {
       setUserHomePath(role === "CHOFER_HUERTA_GRANDE" ? "/chofer/huerta-grande" : role === "CHOFER_LA_FALDA" ? "/chofer/la-falda" : "/dashboard");
     } catch { setIsAdmin(false); setUserHomePath("/login"); }
     setMounted(true);
-  }, []);
+  }, [pathname]);
   if (!mounted || pathname === "/login") return null;
   const isDriverRoute = pathname.startsWith("/chofer/");
   const showAdminMenu = !isDriverRoute && isAdmin;

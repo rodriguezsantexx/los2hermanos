@@ -1,13 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/layout/Sidebar";
 import MobileNav from "@/components/layout/MobileNav";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
 
 export const metadata: Metadata = {
   title: "Los 2 Hermanos - Admin",
@@ -28,8 +22,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`${inter.variable} h-full antialiased`}>
-      <body className={`${inter.className} h-full bg-background text-foreground flex`}>
+    <html lang="es" className="h-full antialiased">
+      <body className="h-full bg-background text-foreground flex">
         {/* Menú lateral (Oculto en celulares, visible en PC) */}
         <Sidebar />
         
