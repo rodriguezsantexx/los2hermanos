@@ -7,11 +7,7 @@ type Detalle = { producto: string; cantidad: number; precio: number };
 type Cliente = { id: string; nombre: string; localidad_id: string; localidades?: { nombre?: string } | null };
 type Localidad = { id: string; nombre: string };
 
-const pedidosIniciales = [
-  { id: "#1059", cliente: "María Gómez", localidad: "Huerta Grande", total: "$15.000", estado: "Pendiente", pago: "A confirmar", detalles: [{ producto: "Garrafa 15kg", cantidad: 1, precio: 15000 }] },
-  { id: "#1058", cliente: "Juan Pérez", localidad: "La Falda", total: "$35.000", estado: "Entregado", pago: "Efectivo", detalles: [{ producto: "Garrafa 15kg", cantidad: 1, precio: 15000 }, { producto: "Tubo", cantidad: 1, precio: 20000 }] },
-  { id: "#1057", cliente: "Ana Rodríguez", localidad: "La Falda", total: "$22.500", estado: "Asignado", pago: "Transferencia", detalles: [{ producto: "Garrafa 15kg", cantidad: 1, precio: 15000 }, { producto: "Carbón", cantidad: 1, precio: 7500 }] },
-];
+const pedidosIniciales: any[] = [];
 
 export default function PedidosPage() {
   const [filtro, setFiltro] = useState("Todos");
@@ -41,6 +37,33 @@ export default function PedidosPage() {
     } catch {
       setPuedeCrear(false);
     }
+    
+    // Cargar pedidos reales
+    fetch("http://localhost:8000/api/pedidos", {
+      headers: {
+        "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}`
+      }
+    })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        if(Array.isArray(data)) {
+          const pedidosFormateados = data.map(p => ({
+            id: `#${p.id.substring(0, 4).toUpperCase()}`,
+            cliente: p.clientes?.nombre || "Desconocido",
+            localidad: p.localidades?.nombre || "Sin localidad",
+            total: `$${p.total}`,
+            estado: p.estado,
+            pago: p.metodo_pago || "A confirmar",
+            detalles: (p.detalle_pedidos || []).map((d: any) => ({
+              producto: d.productos?.nombre || "Producto",
+              cantidad: d.cantidad,
+              precio: d.precio_unitario
+            }))
+          }));
+          setPedidos(pedidosFormateados);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
