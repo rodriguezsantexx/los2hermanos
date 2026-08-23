@@ -313,17 +313,6 @@ async function connectToWhatsApp() {
         
         // Ignorar mensajes de grupos (terminan en @g.us)
         if (remoteJid.endsWith('@g.us')) return;
-
-        // --- ENTORNO SEGURO DE DESARROLLO ---
-        // TODO: Eliminar esto para producción
-        // Lista de IDs permitidos (incluye el número original y el LID de WhatsApp)
-        const allowedIds = ['3548611783', '273091401912494@lid'];
-        if (!allowedIds.some(id => remoteJid.includes(id))) {
-            console.log(`Mensaje ignorado (fuera de lista blanca de pruebas): ${remoteJid}`);
-            return;
-        }
-        console.log(`[!] Mensaje ACEPTADO de lista blanca: ${remoteJid}`);
-        // ------------------------------------
         
         // Extraer texto del mensaje (puede ser conversation o extendedTextMessage)
         let textMessage = msg.message.conversation || msg.message.extendedTextMessage?.text;
