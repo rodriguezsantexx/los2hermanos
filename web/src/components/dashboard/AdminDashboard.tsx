@@ -7,7 +7,12 @@ type DashboardMetrics = { ventas_total: number; pedidos_total: number; pedidos_p
 
 export default function AdminDashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  useEffect(() => { apiFetch<DashboardMetrics>("/api/finanzas/metricas/resumen").then(setMetrics).catch(() => undefined); }, []);
+  const [pedidosRecientes, setPedidosRecientes] = useState<any[]>([]);
+
+  useEffect(() => { 
+    apiFetch<DashboardMetrics>("/api/finanzas/metricas/resumen").then(setMetrics).catch(() => undefined);
+    apiFetch<any[]>("/api/pedidos").then(data => setPedidosRecientes((data || []).slice(0, 5))).catch(() => undefined);
+  }, []);
   const pedidos = metrics?.pedidos_total ?? 0;
   const entregados = metrics?.pedidos_por_estado?.Entregado ?? 0;
   const pendientes = (metrics?.pedidos_por_estado?.Pendiente ?? 0) + (metrics?.pedidos_por_estado?.Asignado ?? 0) + (metrics?.pedidos_por_estado?.["En reparto"] ?? 0);
@@ -32,16 +37,36 @@ export default function AdminDashboard() {
         <section className="md:col-span-2 card space-y-4">
           <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold">Pedidos Recientes</h3><button className="text-primary font-medium hover:underline">Ver todos</button></div>
           <div className="space-y-4">
-            {[
-              { id: "#1059", cliente: "María Gómez", loc: "Huerta Grande", total: "$15.000", estado: "Pendiente" },
-              { id: "#1058", cliente: "Juan Pérez", loc: "La Falda", total: "$35.000", estado: "Entregado" },
-            ].map(p => <div key={p.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"><div className="flex gap-4 items-center"><div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center font-bold text-gray-600 border border-gray-100">{p.id.replace('#', '')}</div><div><p className="font-bold text-gray-900">{p.cliente}</p><p className="text-sm text-muted">📍 {p.loc}</p></div></div><div className="text-right flex flex-col items-end gap-2"><p className="font-bold text-lg">{p.total}</p><span className={p.estado === 'Entregado' ? 'badge-success' : 'badge-warning'}>{p.estado}</span></div></div>)}
+            {pedidosRecientes.length > 0 ? pedidosRecientes.map(p => (
+              <div key={p.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer">
+                <div className="flex gap-4 items-center">
+                  <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center font-bold text-gray-600 border border-gray-100">
+                    {p.id.substring(0, 4).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-900">{p.clientes?.nombre || "Cliente Desconocido"}</p>
+                    <p className="text-sm text-muted">📍 {p.localidades?.nombre || p.clientes?.direccion || "Sin dirección"}</p>
+                  </div>
+                </div>
+                <div className="text-right flex flex-col items-end gap-2">
+                  <p className="font-bold text-lg">${p.total}</p>
+                  <span className={p.estado === 'Entregado' ? 'badge-success' : 'badge-warning'}>{p.estado}</span>
+                </div>
+              </div>
+            )) : <p className="text-gray-500 text-center py-4">No hay pedidos recientes.</p>}
           </div>
         </section>
 
         <section className="card space-y-4 border-l-4 border-l-error flex flex-col">
           <div className="flex items-center gap-2 mb-4"><span className="text-xl">⚠️</span><h3 className="text-xl font-bold">Stock Bajo</h3></div>
-          <div className="space-y-3 flex-1">{[{ prod: "Garrafa 10kg", stock: 5 }, { prod: "Carbón", stock: 4 }, { prod: "Alimento perro", stock: 3 }].map(s => <div key={s.prod} className="flex justify-between items-center p-3 border-b border-gray-100 last:border-0"><span className="font-medium text-gray-700">{s.prod}</span><span className="badge-error">{s.stock} un.</span></div>)}</div>
+          <div className="space-y-3 flex-1">
+            {metrics?.stock_bajo && metrics.stock_bajo.length > 0 ? metrics.stock_bajo.map(s => (
+              <div key={s.id} className="flex justify-between items-center p-3 border-b border-gray-100 last:border-0">
+                <span className="font-medium text-gray-700">{s.nombre}</span>
+                <span className="badge-error">{s.stock_actual} un.</span>
+              </div>
+            )) : <p className="text-gray-500 text-center py-4">Stock en niveles óptimos.</p>}
+          </div>
           <button className="w-full mt-auto btn-secondary">Reponer Stock</button>
         </section>
       </div>
