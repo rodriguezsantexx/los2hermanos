@@ -160,7 +160,7 @@ export default function ClientesPage() {
 
   const crearCliente = async (event: React.FormEvent) => {
     event.preventDefault();
-    const res = await fetch("http://localhost:8000/api/clientes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(clienteForm) });
+    const res = await fetch("http://localhost:8000/api/clientes/", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify(clienteForm) });
     if (!res.ok) { const data = await res.json(); alert(data.detail || "No se pudo crear el cliente"); return; }
     setClienteForm({ nombre: "", telefono: "", direccion: "", localidad_id: localidades[0]?.id || "" });
     setClienteModal(false);
@@ -175,7 +175,7 @@ export default function ClientesPage() {
       // 1. Asegurar que el cliente existe
       let cliente_id = "";
       const clienteData = { nombre: pedidoForm.nombre, telefono: pedidoForm.telefono, direccion: pedidoForm.direccion, localidad_id: pedidoForm.localidad_id };
-      const clienteRes = await fetch("http://localhost:8000/api/clientes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(clienteData) });
+      const clienteRes = await fetch("http://localhost:8000/api/clientes/", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify(clienteData) });
       if (clienteRes.ok) {
         const c = await clienteRes.json();
         cliente_id = c.id;
@@ -200,7 +200,7 @@ export default function ClientesPage() {
         observaciones: pedidoForm.observaciones
       };
 
-      const pedRes = await fetch("http://localhost:8000/api/pedidos", {
+      const pedRes = await fetch("http://localhost:8000/api/pedidos/", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(pedidoPayload)

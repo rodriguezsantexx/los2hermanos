@@ -38,7 +38,7 @@ export default function MobileNav() {
   ];
 
   const moreMenu = [
-    ...(showAdminMenu ? [{ name: "Productos", icon: "🛒", path: "/productos" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }] : []),
+    ...(showAdminMenu ? [{ name: "Historial de Ventas", icon: "📊", path: "/historial" }, { name: "Productos", icon: "🛒", path: "/productos" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }] : []),
   ];
 
   const isMoreActive = moreMenu.some(item => pathname.startsWith(item.path));

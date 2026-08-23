@@ -9,6 +9,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init.headers || {}),
     },
+    cache: "no-store",
   });
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(data?.detail || "No se pudo completar la operación");

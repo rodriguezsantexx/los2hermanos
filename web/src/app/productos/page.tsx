@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 
 type Producto = {
   id: string;
@@ -12,7 +13,8 @@ type Producto = {
 
 type Movimiento = { id: string; producto_id: string; cantidad: number; tipo: "Entrada" | "Salida"; motivo: string; fecha: string; productos?: { nombre?: string } | null };
 
-export default function ProductosPage() {
+function ProductosContent() {
+  const searchParams = useSearchParams();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,12 +52,22 @@ export default function ProductosPage() {
         initialPrices[p.id] = p.precio.toString();
       });
       setPreciosEditados(initialPrices);
+      
+      // Auto-abrir modal de stock si venimos desde el Dashboard
+      const searchTarget = searchParams.get("search");
+      if (searchTarget && data) {
+        const targetProduct = data.find((p: Producto) => p.nombre === searchTarget);
+        if (targetProduct) {
+          setStockModal(targetProduct);
+          setStockForm({ cantidad: "", tipo: "Entrada", motivo: "Compra" });
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error de conexion");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchParams]);
 
   const handleStockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -339,5 +351,13 @@ export default function ProductosPage() {
 
       <section className="card"><h3 className="mb-4 text-xl font-bold">Últimos movimientos de stock</h3>{movimientos.length === 0 ? <p className="text-muted">Todavía no hay movimientos registrados.</p> : <div className="space-y-2">{movimientos.map(m => <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 p-3 text-sm"><span className="font-bold text-gray-900">{m.productos?.nombre || "Producto"}</span><span className={m.tipo === "Entrada" ? "text-green-600" : "text-red-600"}>{m.tipo === "Entrada" ? "+" : "-"}{m.cantidad} un.</span><span className="text-gray-500">{m.motivo}</span></div>)}</div>}</section>
     </main>
+  );
+}
+
+export default function ProductosPage() {
+  return (
+    <Suspense fallback={<div className="p-8">Cargando...</div>}>
+      <ProductosContent />
+    </Suspense>
   );
 }

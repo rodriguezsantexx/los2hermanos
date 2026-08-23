@@ -121,8 +121,8 @@ Estructura deseada:
 Conversación reciente:
 ${historyText}`;
 
-        const completion = await openai.chat.completions.create({
-            model: OPENROUTER_MODEL,
+        const completion = await groq.chat.completions.create({
+            model: 'openai/gpt-oss-120b',
             messages: [{ role: 'system', content: prompt }],
             response_format: { type: "json_object" }
         });
@@ -218,8 +218,8 @@ async function getAIResponse(userPhone: string, userMessage: string): Promise<st
     conversationHistories[userPhone].push({ role: 'user', content: userMessage });
 
     try {
-        const completion = await openai.chat.completions.create({
-            model: OPENROUTER_MODEL,
+        const completion = await groq.chat.completions.create({
+            model: 'openai/gpt-oss-120b',
             messages: conversationHistories[userPhone],
         });
 
@@ -238,8 +238,10 @@ async function getAIResponse(userPhone: string, userMessage: string): Promise<st
         }
 
         return reply;
-    } catch (error) {
-        console.error('Error al comunicarse con OpenRouter:', error);
+    } catch (error: any) {
+        console.error('=== ERROR DE IA ===');
+        console.error(error?.message || error);
+        console.error('===================');
         return 'Ocurrió un error al contactar al agente de IA. Por favor, intenta de nuevo más tarde.';
     }
 }
@@ -311,6 +313,17 @@ async function connectToWhatsApp() {
         
         // Ignorar mensajes de grupos (terminan en @g.us)
         if (remoteJid.endsWith('@g.us')) return;
+
+        // --- ENTORNO SEGURO DE DESARROLLO ---
+        // TODO: Eliminar esto para producción
+        // Lista de IDs permitidos (incluye el número original y el LID de WhatsApp)
+        const allowedIds = ['3548611783', '273091401912494@lid'];
+        if (!allowedIds.some(id => remoteJid.includes(id))) {
+            console.log(`Mensaje ignorado (fuera de lista blanca de pruebas): ${remoteJid}`);
+            return;
+        }
+        console.log(`[!] Mensaje ACEPTADO de lista blanca: ${remoteJid}`);
+        // ------------------------------------
         
         // Extraer texto del mensaje (puede ser conversation o extendedTextMessage)
         let textMessage = msg.message.conversation || msg.message.extendedTextMessage?.text;

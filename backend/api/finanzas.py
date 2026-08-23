@@ -25,6 +25,30 @@ def day_window(value: date | None) -> tuple[str, str]:
     return start.isoformat(), (start + timedelta(days=1)).isoformat()
 
 
+def month_window(mes_str: str | None) -> tuple[str, str]:
+    # mes_str format: "YYYY-MM"
+    current = datetime.now(timezone.utc).date()
+    if mes_str:
+        try:
+            year, month = map(int, mes_str.split("-"))
+            current = date(year, month, 1)
+        except ValueError:
+            pass
+    else:
+        current = date(current.year, current.month, 1)
+        
+    start = datetime.combine(current, time.min, tzinfo=timezone.utc)
+    
+    # Calculate next month
+    if current.month == 12:
+        next_month = date(current.year + 1, 1, 1)
+    else:
+        next_month = date(current.year, current.month + 1, 1)
+        
+    end = datetime.combine(next_month, time.min, tzinfo=timezone.utc)
+    return start.isoformat(), end.isoformat()
+
+
 @router.get("/caja/resumen")
 def caja_resumen(fecha: date | None = Query(default=None), current_user=Depends(admin_required)):
     inicio, fin = day_window(fecha)
@@ -38,6 +62,46 @@ def caja_resumen(fecha: date | None = Query(default=None), current_user=Depends(
         "saldo": json_money(ingresos - egresos),
         "movimientos": movimientos,
     }
+
+
+@router.get("/caja/resumen-mensual")
+def caja_resumen_mensual(mes: str | None = Query(default=None), current_user=Depends(admin_required)):
+    inicio, fin = month_window(mes)
+    # Solo traemos campos necesarios para optimizar
+    movimientos = supabase.table("movimientos_caja").select("id, tipo, monto, fecha").gte("fecha", inicio).lt("fecha", fin).order("fecha", desc=True).execute().data or []
+    ingresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Ingreso"), Decimal(0))
+    egresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Egreso"), Decimal(0))
+    
+    # Agrupar ingresos por día para un gráfico o resumen rápido
+    ingresos_por_dia = {}
+    for mov in movimientos:
+        dia = mov["fecha"][:10] # YYYY-MM-DD
+        if dia not in ingresos_por_dia:
+            ingresos_por_dia[dia] = {"ingresos": Decimal(0), "egresos": Decimal(0)}
+        if mov["tipo"] == "Ingreso":
+            ingresos_por_dia[dia]["ingresos"] += money(mov["monto"])
+        else:
+            ingresos_por_dia[dia]["egresos"] += money(mov["monto"])
+            
+    resumen_dias = [
+        {
+            "fecha": dia,
+            "ingresos": json_money(data["ingresos"]),
+            "egresos": json_money(data["egresos"]),
+            "saldo": json_money(data["ingresos"] - data["egresos"])
+        } 
+        for dia, data in sorted(ingresos_por_dia.items(), reverse=True)
+    ]
+    
+    return {
+        "mes": mes or datetime.now(timezone.utc).strftime("%Y-%m"),
+        "ingresos": json_money(ingresos),
+        "egresos": json_money(egresos),
+        "saldo": json_money(ingresos - egresos),
+        "total_movimientos": len(movimientos),
+        "resumen_dias": resumen_dias
+    }
+
 
 
 @router.post("/caja/movimientos")
@@ -109,6 +173,18 @@ def metricas_resumen(fecha: date | None = Query(default=None), current_user=Depe
     ingresos = sum((money(item["monto"]) for item in caja if item["tipo"] == "Ingreso"), Decimal(0))
     egresos = sum((money(item["monto"]) for item in caja if item["tipo"] == "Egreso"), Decimal(0))
     estados = {estado: sum(1 for pedido in pedidos if pedido["estado"] == estado) for estado in ["Pendiente", "Confirmado", "Asignado", "En reparto", "Entregado", "Cancelado"]}
+    stock_bajo = []
+    for item in stock:
+        actual = item.get("stock_actual")
+        minimo = item.get("stock_minimo")
+        if actual is None:
+            actual = 0
+        if minimo is None:
+            minimo = 5 # Por defecto 5 si es nulo en la DB
+            
+        if actual <= minimo:
+            stock_bajo.append(item)
+
     return {
         "fecha": (fecha or datetime.now(timezone.utc).date()).isoformat(),
         "pedidos_total": len(pedidos),
@@ -118,5 +194,5 @@ def metricas_resumen(fecha: date | None = Query(default=None), current_user=Depe
         "egresos_caja": json_money(egresos),
         "saldo_caja": json_money(ingresos - egresos),
         "cuenta_corriente_total": json_money(sum((money(item["saldo_corriente"]) for item in clientes), Decimal(0))),
-        "stock_bajo": [item for item in stock if item["stock_actual"] <= item["stock_minimo"]],
+        "stock_bajo": stock_bajo,
     }

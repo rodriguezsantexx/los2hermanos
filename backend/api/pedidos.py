@@ -107,7 +107,7 @@ def get_pedidos(current_user=Depends(get_current_user)):
     if rol != "ADMIN":
         query = query.eq("chofer_id", current_user["id"])
         
-    res = query.execute()
+    res = query.order("created_at", desc=True).execute()
     return res.data
 
 @router.post("/{pedido_id}/entregar")
@@ -141,14 +141,15 @@ def entregar_pedido(pedido_id: str, update: PedidoStatusUpdate, current_user=Dep
         "metodo_pago": update.metodo_pago
     }).execute()
     
-    # Registrar Caja
-    supabase.table("movimientos_caja").insert({
-        "tipo": "Ingreso",
-        "monto": pedido["total"],
-        "metodo_pago": update.metodo_pago,
-        "usuario_id": current_user["id"],
-        "descripcion": f"Venta Pedido #{pedido_id}"
-    }).execute()
+    # Registrar Caja (solo si ingresa plata real, si es fiado no entra a caja)
+    if update.metodo_pago.lower() != "fiado":
+        supabase.table("movimientos_caja").insert({
+            "tipo": "Ingreso",
+            "monto": pedido["total"],
+            "metodo_pago": update.metodo_pago,
+            "usuario_id": current_user["id"],
+            "descripcion": f"Venta Pedido #{pedido_id}"
+        }).execute()
     
     # Si es fiado, cuenta corriente
     if update.metodo_pago.lower() == "fiado":
