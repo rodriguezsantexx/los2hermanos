@@ -3,10 +3,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useNotifications } from '@/context/NotificationContext';
 
 export default function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const { totalUnread } = useNotifications();
   const [mounted, setMounted] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(true);
@@ -36,7 +38,7 @@ export default function MobileNav() {
   ];
 
   const moreMenu = [
-    ...(showAdminMenu ? [{ name: "Productos", icon: "🛒", path: "/productos" }, { name: "Caja", icon: "💰", path: "/caja" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }, { name: "Métricas", icon: "📊", path: "/metricas" }, { name: "Choferes", icon: "🚚", path: "/choferes" }, { name: "Ajustes", icon: "⚙️", path: "/configuracion" }] : []),
+    ...(showAdminMenu ? [{ name: "Productos", icon: "🛒", path: "/productos" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }] : []),
   ];
 
   const isMoreActive = moreMenu.some(item => pathname.startsWith(item.path));
@@ -79,7 +81,14 @@ export default function MobileNav() {
             href={item.path}
             className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${isActive ? 'text-primary' : 'text-gray-400 hover:text-gray-900'}`}
           >
-            <span className={`text-2xl ${isActive ? 'scale-110 transition-transform' : ''}`}>{item.icon}</span>
+            <div className="relative">
+              <span className={`text-2xl ${isActive ? 'scale-110 transition-transform' : ''}`}>{item.icon}</span>
+              {item.name === "Clientes" && totalUnread > 0 && (
+                <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-pulse shadow-sm">
+                  {totalUnread}
+                </span>
+              )}
+            </div>
             <span className="text-[10px] font-bold tracking-wide">{item.name}</span>
           </Link>
         )

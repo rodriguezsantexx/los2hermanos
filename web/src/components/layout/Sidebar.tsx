@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import LogoutButton from '@/components/auth/LogoutButton';
+import { useNotifications } from '@/context/NotificationContext';
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { totalUnread } = useNotifications();
   const [mounted, setMounted] = useState(false);
   const [isAdmin, setIsAdmin] = useState(true);
   const [userHomePath, setUserHomePath] = useState("/dashboard");
@@ -27,7 +29,7 @@ export default function Sidebar() {
   const menu = [
     { name: "Inicio", icon: "🏠", path: homePath },
     { name: "Pedidos", icon: "📦", path: pedidosPath },
-    ...(showAdminMenu ? [{ name: "Productos", icon: "🛒", path: "/productos" }, { name: "Clientes", icon: "👥", path: "/clientes" }, { name: "Caja", icon: "💰", path: "/caja" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }, { name: "Métricas", icon: "📊", path: "/metricas" }, { name: "Choferes", icon: "🚚", path: "/choferes" }, { name: "Configuración", icon: "⚙️", path: "/configuracion" }] : [])
+    ...(showAdminMenu ? [{ name: "Productos", icon: "🛒", path: "/productos" }, { name: "Clientes", icon: "👥", path: "/clientes" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }] : [])
   ];
 
   return (
@@ -42,10 +44,15 @@ export default function Sidebar() {
           <Link 
             key={item.name} 
             href={item.path}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${pathname === item.path ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-600 hover:bg-gray-50 hover:text-primary font-medium'}`}
+            className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${pathname === item.path ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-600 hover:bg-gray-50 hover:text-primary font-medium'}`}
           >
-            <span className="text-xl">{item.icon}</span>
-            <span>{item.name}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xl">{item.icon}</span>
+              <span>{item.name}</span>
+            </div>
+            {item.name === "Clientes" && totalUnread > 0 && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">{totalUnread}</span>
+            )}
           </Link>
         ))}
       </nav>

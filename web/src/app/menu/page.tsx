@@ -5,9 +5,6 @@ import Link from "next/link";
 const opciones = [
   { name: "Stock", description: "Controlá existencias y movimientos", icon: "📊", path: "/stock" },
   { name: "Clientes", description: "Consultá y administrá clientes", icon: "👥", path: "/clientes" },
-  { name: "Caja", description: "Revisá ingresos y egresos", icon: "💰", path: "/caja" },
-  { name: "Choferes", description: "Gestioná el equipo de reparto", icon: "🚚", path: "/choferes" },
-  { name: "Configuración", description: "Preferencias y configuración del sistema", icon: "⚙️", path: "/configuracion" },
 ];
 
 export default function MenuPage() {

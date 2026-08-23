@@ -1,6 +1,8 @@
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import { writeFile } from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
@@ -86,6 +88,58 @@ app.post('/api/restart', (req: any, res: any) => {
     res.json({ success: true, message: 'Reiniciando bot...' });
 });
 
+app.post('/api/extract-order', async (req: any, res: any) => {
+    try {
+        const { chat_id, productos_disponibles, localidades_disponibles } = req.body;
+        
+        const { data: mensajes } = await supabase
+            .from('whatsapp_mensajes')
+            .select('es_bot, mensaje')
+            .eq('chat_id', chat_id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+            
+        if (!mensajes) return res.status(404).json({ error: 'Chat sin mensajes' });
+        
+        const historyText = mensajes.reverse().map((m: any) => `${m.es_bot ? 'Bot' : 'Cliente'}: ${m.mensaje}`).join('\n');
+        
+        const prompt = `Analiza esta conversación y extrae los datos del pedido en formato JSON estricto.
+No incluyas markdown, solo JSON válido.
+Estructura deseada:
+{
+  "direccion": "Calle y número exacto extraído de la conversación. Si no hay, dejar vacío",
+  "localidad_id": "Compara la localidad mencionada y elige el ID correcto de esta lista (ignora mayusculas/minusculas). Lista: ${JSON.stringify(localidades_disponibles)}. Si no menciona ninguna o no coincide, dejar vacío",
+  "metodo_pago": "Efectivo, Transferencia o Fiado. Por defecto Efectivo si no dice nada.",
+  "detalles": [
+    {
+       "producto_id": "Elige el ID correcto de esta lista: ${JSON.stringify(productos_disponibles.map((p:any) => ({id: p.id, nombre: p.nombre})))}",
+       "cantidad": 1
+    }
+  ]
+}
+
+Conversación reciente:
+${historyText}`;
+
+        const completion = await openai.chat.completions.create({
+            model: OPENROUTER_MODEL,
+            messages: [{ role: 'system', content: prompt }],
+            response_format: { type: "json_object" }
+        });
+
+        const reply = completion?.choices?.[0]?.message?.content || '{}';
+        
+        // Limpiar posible markdown (ej. ```json ... ```)
+        const cleanReply = reply.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleanReply);
+        
+        return res.json(parsed);
+    } catch (err) {
+        console.error('Error extrayendo pedido:', err);
+        return res.status(500).json({ error: 'Error interno de IA' });
+    }
+});
+
 app.listen(3005, () => {
     console.log('Servidor de API interno corriendo en puerto 3005');
 });
@@ -143,9 +197,12 @@ ${productosTexto}
 
 *INSTRUCCIONES CLAVE:*
 1. Sé amable, conciso y utiliza expresiones argentinas sutiles y amigables.
-2. Si el cliente quiere hacer un pedido, guíalo para que te dé: Producto, Cantidad, Dirección exacta (asegurándote que esté en nuestras zonas de envío) y Forma de pago.
-3. NUNCA inventes precios. Usa estrictamente los precios de la lista de arriba, y recuérdale que el envío cuesta $2000 adicionales.
-4. Si ves un mensaje diciendo que hubo un error con un audio, pídele amablemente que escriba su consulta.`;
+2. Si el cliente quiere hacer un pedido, guíalo para que te dé: Producto, Cantidad, Dirección exacta y Forma de pago.
+3. IMPORTANTE SOBRE UBICACIONES: Nuestras zonas de envío son EXCLUSIVAMENTE Casa Grande, Valle Hermoso, La Falda, Huerta Grande y Villa Giardino. 
+- Si el cliente da una ubicación que claramente NO es de estas ciudades, RECHAZA amablemente el pedido indicando que está fuera de nuestra zona de cobertura.
+- ¡OJO! Dentro de nuestras zonas de envío existen calles que tienen nombres de provincias o países (ej: calle Santiago del Estero, Buenos Aires, Perú, etc). Si el cliente menciona una calle con nombre de provincia PERO especifica que está en una de nuestras ciudades (ej: "Santiago del Estero 770, La Falda"), es una dirección VÁLIDA. NUNCA le digas que esa dirección queda en otra provincia. Asume que es una calle local.
+4. NUNCA inventes precios. Usa estrictamente los precios de la lista de arriba, y recuérdale que el envío cuesta $2000 adicionales.
+5. Si ves un mensaje diciendo que hubo un error con un audio, pídele amablemente que escriba su consulta.`;
 }
 
 async function getAIResponse(userPhone: string, userMessage: string): Promise<string> {
@@ -270,7 +327,7 @@ async function connectToWhatsApp() {
                     reuploadRequest: sock.updateMediaMessage
                 });
                 
-                const fileName = `/tmp/audio_${Date.now()}_${remoteJid.split('@')[0]}.ogg`;
+                const fileName = path.join(os.tmpdir(), `audio_${Date.now()}_${remoteJid.split('@')[0]}.ogg`);
                 await writeFile(fileName, buffer);
                 
                 // Enviar a transcribir a Groq
@@ -322,6 +379,8 @@ async function connectToWhatsApp() {
 
                 // 2. Guardar el mensaje del usuario en la BD
                 if (chatId) {
+                    await supabase.from('whatsapp_chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
+                    
                     const { error: errorMsj } = await supabase.from('whatsapp_mensajes').insert({
                         chat_id: chatId,
                         es_bot: false,
@@ -349,6 +408,8 @@ async function connectToWhatsApp() {
 
                 // Guardar la respuesta de la IA en la BD
                 if (chatId) {
+                    await supabase.from('whatsapp_chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
+                    
                     await supabase.from('whatsapp_mensajes').insert({
                         chat_id: chatId,
                         es_bot: true,
