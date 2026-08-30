@@ -9,6 +9,10 @@ type Producto = {
   precio: number;
   stock_actual: number;
   stock_minimo: number;
+  categoria: string;
+  marca?: string;
+  cantidad?: string;
+  precio_retiro: number | null;
 };
 
 type Movimiento = { id: string; producto_id: string; cantidad: number; tipo: "Entrada" | "Salida"; motivo: string; fecha: string; productos?: { nombre?: string } | null };
@@ -19,17 +23,25 @@ function ProductosContent() {
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("Todos");
+
+  const CATEGORIAS = ["Gas", "Alimento", "Agua", "Leña"];
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     nombre: "",
     precio: "",
+    precio_retiro: "",
+    categoria: "Gas",
     stock_actual: "",
+    marca: "",
+    cantidad: "",
   });
 
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [preciosEditados, setPreciosEditados] = useState<Record<string, string>>({});
+  const [preciosRetiroEditados, setPreciosRetiroEditados] = useState<Record<string, string>>({});
   const [stockModal, setStockModal] = useState<Producto | null>(null);
   const [stockForm, setStockForm] = useState({ cantidad: "", tipo: "Entrada" as "Entrada" | "Salida", motivo: "Compra" });
   const [renamingProducto, setRenamingProducto] = useState<Producto | null>(null);
@@ -48,10 +60,13 @@ function ProductosContent() {
       setProductos(data);
 
       const initialPrices: Record<string, string> = {};
+      const initialRetiroPrices: Record<string, string> = {};
       data.forEach((p: Producto) => {
         initialPrices[p.id] = p.precio.toString();
+        initialRetiroPrices[p.id] = p.precio_retiro ? p.precio_retiro.toString() : "";
       });
       setPreciosEditados(initialPrices);
+      setPreciosRetiroEditados(initialRetiroPrices);
       
       // Auto-abrir modal de stock si venimos desde el Dashboard
       const searchTarget = searchParams.get("search");
@@ -103,8 +118,12 @@ function ProductosContent() {
       const payload = {
         nombre: formData.nombre,
         precio: Number.parseFloat(formData.precio),
+        precio_retiro: formData.precio_retiro ? Number.parseFloat(formData.precio_retiro) : undefined,
+        categoria: formData.categoria,
         stock_actual: Number.parseInt(formData.stock_actual, 10),
         stock_minimo: 5,
+        marca: formData.marca || undefined,
+        cantidad: formData.cantidad || undefined,
       };
 
       const res = await fetch("http://localhost:8000/api/productos", {
@@ -118,7 +137,7 @@ function ProductosContent() {
         throw new Error(errData.detail || "Error al guardar el producto");
       }
 
-      setFormData({ nombre: "", precio: "", stock_actual: "" });
+      setFormData({ nombre: "", precio: "", precio_retiro: "", categoria: "Gas", stock_actual: "", marca: "", cantidad: "" });
       setIsModalOpen(false);
       fetchProductos();
     } catch (err) {
@@ -136,27 +155,28 @@ function ProductosContent() {
     const nuevoPrecioStr = preciosEditados[producto.id];
     const nuevoPrecio = Number.parseFloat(nuevoPrecioStr);
     
-    if (isNaN(nuevoPrecio) || nuevoPrecio < 0) {
-      alert("Por favor ingresa un precio válido");
+    const nuevoPrecioRetiroStr = preciosRetiroEditados[producto.id];
+    const nuevoPrecioRetiro = nuevoPrecioRetiroStr ? Number.parseFloat(nuevoPrecioRetiroStr) : null;
+    
+    if (isNaN(nuevoPrecio) || nuevoPrecio < 0 || (nuevoPrecioRetiro !== null && nuevoPrecioRetiro < 0)) {
+      alert("Por favor ingresa precios válidos");
       return;
     }
-
-    if (nuevoPrecio === producto.precio) return;
 
     setUpdatingId(producto.id);
     try {
       const res = await fetch(`http://localhost:8000/api/productos/${producto.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ precio: nuevoPrecio }),
+        body: JSON.stringify({ precio: nuevoPrecio, precio_retiro: nuevoPrecioRetiro }),
       });
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.detail || "Error al actualizar el precio");
+        throw new Error(errData.detail || "Error al actualizar los precios");
       }
 
-      setProductos(prev => prev.map(p => p.id === producto.id ? { ...p, precio: nuevoPrecio } : p));
+      setProductos(prev => prev.map(p => p.id === producto.id ? { ...p, precio: nuevoPrecio, precio_retiro: nuevoPrecioRetiro } : p));
       
       const row = document.getElementById(`row-${producto.id}`);
       if (row) {
@@ -166,6 +186,7 @@ function ProductosContent() {
     } catch (err) {
       alert(err instanceof Error ? err.message : "Error al actualizar");
       setPreciosEditados(prev => ({ ...prev, [producto.id]: producto.precio.toString() }));
+      setPreciosRetiroEditados(prev => ({ ...prev, [producto.id]: producto.precio_retiro ? producto.precio_retiro.toString() : "" }));
     } finally {
       setUpdatingId(null);
     }
@@ -223,9 +244,41 @@ function ProductosContent() {
                   onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                <select
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 outline-none focus:border-primary focus:ring-1 transition-all"
+                  value={formData.categoria}
+                  onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+                >
+                  {CATEGORIAS.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio ($)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Marca (Opcional)</label>
+                  <input
+                    type="text"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 outline-none focus:border-primary focus:ring-1 transition-all"
+                    placeholder="Ej. Coca-Cola"
+                    value={formData.marca}
+                    onChange={(e) => setFormData({ ...formData, marca: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad (Opcional)</label>
+                  <input
+                    type="text"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 outline-none focus:border-primary focus:ring-1 transition-all"
+                    placeholder="Ej. 1.5 L, 500 GR"
+                    value={formData.cantidad}
+                    onChange={(e) => setFormData({ ...formData, cantidad: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio Envío ($)</label>
                   <input
                     required
                     type="number"
@@ -238,17 +291,29 @@ function ProductosContent() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock inicial</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio Retiro ($) - Opcional</label>
                   <input
-                    required
                     type="number"
                     min="0"
+                    step="0.01"
                     className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 outline-none focus:border-primary focus:ring-1 transition-all"
-                    placeholder="50"
-                    value={formData.stock_actual}
-                    onChange={(e) => setFormData({ ...formData, stock_actual: e.target.value })}
+                    placeholder="14000"
+                    value={formData.precio_retiro}
+                    onChange={(e) => setFormData({ ...formData, precio_retiro: e.target.value })}
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Stock inicial</label>
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 outline-none focus:border-primary focus:ring-1 transition-all"
+                  placeholder="50"
+                  value={formData.stock_actual}
+                  onChange={(e) => setFormData({ ...formData, stock_actual: e.target.value })}
+                />
               </div>
               <div className="pt-4 flex gap-3">
                 <button
@@ -281,20 +346,38 @@ function ProductosContent() {
               No hay productos en la base de datos Supabase aun. Agrega uno.
             </div>
           ) : (
-            <table className="w-full text-left border-collapse min-w-[700px]">
+            <>
+              <div className="border-b border-gray-200">
+                <nav className="flex space-x-4 px-4 pt-4 overflow-x-auto" aria-label="Tabs">
+                  {["Todos", ...CATEGORIAS].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`whitespace-nowrap pb-3 px-1 border-b-2 font-medium text-sm ${
+                        activeTab === tab
+                          ? "border-primary text-primary"
+                          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </nav>
+              </div>
+              <table className="w-full text-left border-collapse min-w-[700px]">
               <thead>
                 <tr className="bg-gray-50/80 text-gray-500 text-xs tracking-wider border-b border-gray-100">
                   <th className="p-4 font-bold">PRODUCTO</th>
                   <th className="p-4 font-bold">STOCK</th>
-                  <th className="p-4 font-bold w-48">PRECIO</th>
+                  <th className="p-4 font-bold w-48">PRECIOS</th>
                   <th className="p-4 font-bold text-right">ACCIONES</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
-                {productos.map((producto) => (
+                {productos.filter(p => activeTab === "Todos" || p.categoria === activeTab).map((producto) => (
                   <tr key={producto.id} id={`row-${producto.id}`} className="hover:bg-gray-50/50 transition-colors">
                     <td className="p-4">
-                      <div className="flex items-center gap-2"><p className="font-bold text-gray-900">{producto.nombre}</p><button onClick={() => { setRenamingProducto(producto); setNombreEditado(producto.nombre); }} className="text-gray-400 hover:text-primary" title="Cambiar nombre" aria-label={`Cambiar nombre de ${producto.nombre}`}>✎</button></div>
+                      <div className="flex items-center gap-2"><p className="font-bold text-gray-900">{producto.nombre} {producto.marca ? `(${producto.marca})` : ""} {producto.cantidad ? `- ${producto.cantidad}` : ""}</p><button onClick={() => { setRenamingProducto(producto); setNombreEditado(producto.nombre); }} className="text-gray-400 hover:text-primary" title="Cambiar nombre" aria-label={`Cambiar nombre de ${producto.nombre}`}>✎</button></div>
                     </td>
                     <td className="p-4">
                       {producto.stock_actual > 10 ? (
@@ -307,35 +390,50 @@ function ProductosContent() {
                       <button onClick={() => { setStockModal(producto); setStockForm({ cantidad: "", tipo: "Entrada", motivo: "Compra" }); }} className="mt-2 block text-xs font-bold text-primary hover:underline">Ajustar stock</button>
                     </td>
                     <td className="p-4">
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className="w-full bg-white border border-gray-200 rounded-lg pl-8 pr-3 py-2 outline-none focus:border-primary focus:ring-1 transition-all"
-                          value={preciosEditados[producto.id] || ""}
-                          onChange={(e) => handlePriceChange(producto.id, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleUpdatePrice(producto);
-                            }
-                          }}
-                        />
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-xs">Envío $</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="w-full bg-white border border-gray-200 rounded-lg pl-14 pr-3 py-2 outline-none focus:border-primary focus:ring-1 transition-all text-sm"
+                            value={preciosEditados[producto.id] || ""}
+                            onChange={(e) => handlePriceChange(producto.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleUpdatePrice(producto);
+                            }}
+                          />
+                        </div>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-xs">Local $</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="w-full bg-white border border-gray-200 rounded-lg pl-14 pr-3 py-2 outline-none focus:border-primary focus:ring-1 transition-all text-sm"
+                            value={preciosRetiroEditados[producto.id] || ""}
+                            onChange={(e) => setPreciosRetiroEditados(prev => ({...prev, [producto.id]: e.target.value}))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleUpdatePrice(producto);
+                            }}
+                            placeholder="Igual"
+                          />
+                        </div>
                       </div>
                     </td>
                     <td className="p-4 text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-2 flex-col items-end">
                         <button 
                           onClick={() => handleUpdatePrice(producto)}
-                          disabled={updatingId === producto.id || Number(preciosEditados[producto.id]) === producto.precio}
-                          className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:bg-gray-300 transition-colors shadow-sm"
+                          disabled={updatingId === producto.id || (Number(preciosEditados[producto.id]) === producto.precio && (preciosRetiroEditados[producto.id] || "") === (producto.precio_retiro ? producto.precio_retiro.toString() : ""))}
+                          className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:bg-gray-300 transition-colors shadow-sm w-full max-w-[100px]"
                         >
-                          {updatingId === producto.id ? "Guardando..." : "Guardar"}
+                          {updatingId === producto.id ? "Guardar..." : "Guardar"}
                         </button>
                         <button
                           onClick={() => handleDeleteProducto(producto)}
-                          className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 transition-colors"
+                          className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 transition-colors w-full max-w-[100px]"
                         >
                           Borrar
                         </button>
@@ -344,7 +442,8 @@ function ProductosContent() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </>
           )}
         </div>
       </div>

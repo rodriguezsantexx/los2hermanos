@@ -25,19 +25,16 @@ CREATE TABLE usuarios (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. Categorías
-CREATE TABLE categorias (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    nombre VARCHAR(100) UNIQUE NOT NULL
-);
-
--- 5. Productos
+-- 4. Productos
 CREATE TABLE productos (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     nombre VARCHAR(255) NOT NULL,
-    categoria_id UUID REFERENCES categorias(id),
+    categoria VARCHAR(50) DEFAULT 'Gas',
     descripcion TEXT,
     precio DECIMAL(12, 2) NOT NULL DEFAULT 0,
+    precio_retiro DECIMAL(12, 2),
+    marca VARCHAR(255),
+    cantidad VARCHAR(100),
     unidad VARCHAR(50),
     -- Regla 1: Nunca permitir stock negativo
     stock_actual INTEGER NOT NULL DEFAULT 0 CHECK (stock_actual >= 0),
@@ -66,7 +63,10 @@ CREATE TABLE pedidos (
     chofer_id UUID REFERENCES usuarios(id),
     total DECIMAL(12, 2) NOT NULL DEFAULT 0,
     estado VARCHAR(50) NOT NULL DEFAULT 'Pendiente', -- Pendiente, Confirmado, Asignado, En reparto, Entregado, Cancelado
+    tipo_pedido VARCHAR(50) DEFAULT 'Envío', -- Envío, Local
     metodo_pago VARCHAR(50), -- Efectivo, Transferencia, Fiado
+    pago_verificado BOOLEAN DEFAULT FALSE,
+    mp_preference_id VARCHAR(255),
     observaciones TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

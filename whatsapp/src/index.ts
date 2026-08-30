@@ -54,6 +54,77 @@ app.post('/api/send-message', async (req: any, res: any) => {
     }
 });
 
+// Endpoint para simular un mensaje entrante (ideal para pruebas sin celular)
+app.post('/api/simulate-message', async (req: any, res: any) => {
+    try {
+        const { telefono, mensaje } = req.body;
+        if (!telefono || !mensaje) {
+            return res.status(400).json({ error: 'Faltan datos (telefono, mensaje)' });
+        }
+
+        console.log(`[SIMULADOR] Mensaje recibido de ${telefono}: ${mensaje}`);
+
+        let chatId = null;
+        let modoIa = true;
+        try {
+            const { data: chatExistente } = await supabase.from('whatsapp_chats').select('id, modo_ia').eq('telefono', telefono).single();
+            if (chatExistente) {
+                chatId = chatExistente.id;
+                modoIa = chatExistente.modo_ia;
+            } else {
+                const { data: nuevoChat } = await supabase.from('whatsapp_chats').insert({
+                    telefono: telefono,
+                    nombre_contacto: 'Simulador',
+                    modo_ia: true
+                }).select().single();
+                if (nuevoChat) {
+                    chatId = nuevoChat.id;
+                }
+            }
+
+            if (chatId) {
+                await supabase.from('whatsapp_chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
+                await supabase.from('whatsapp_mensajes').insert({
+                    chat_id: chatId,
+                    es_bot: false,
+                    mensaje: mensaje
+                });
+            }
+        } catch (err) {
+            console.error('Error guardando en BD desde simulador:', err);
+        }
+
+        if (modoIa) {
+            let replyText = await getAIResponse(telefono, mensaje);
+            let imagesToSend: string[] = [];
+
+            const photoRegex = /\[FOTO_([^\]]+)\]/g;
+            let match;
+            while ((match = photoRegex.exec(replyText)) !== null) {
+                const imgPath = match[1];
+                imagesToSend.push(`http://localhost:3000/flyers/${imgPath}.jpeg`);
+            }
+            // Eliminar todas las etiquetas del texto
+            replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
+            
+            if (chatId) {
+                await supabase.from('whatsapp_chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
+                await supabase.from('whatsapp_mensajes').insert({
+                    chat_id: chatId,
+                    es_bot: true,
+                    mensaje: replyText
+                });
+            }
+            return res.json({ success: true, reply: replyText, images: imagesToSend });
+        } else {
+            return res.json({ success: true, reply: "[Modo Humano Activo] - La IA no respondió automáticamente." });
+        }
+    } catch (err) {
+        console.error('Error en simulador:', err);
+        return res.status(500).json({ error: 'Error interno en simulación' });
+    }
+});
+
 // Endpoint para ver el estado del bot desde el panel web
 app.get('/api/status', (req: any, res: any) => {
     res.json({ status: botStatus, qr: currentQR });
@@ -171,13 +242,56 @@ async function getDynamicSystemPrompt(): Promise<string> {
         // Traemos los productos activos desde Supabase
         const { data, error } = await supabase
             .from('productos')
-            .select('nombre, precio, unidad')
+            .select('nombre, precio, categoria, marca, cantidad, unidad')
             .eq('estado', 'activo');
             
         if (error) throw error;
         
         if (data && data.length > 0) {
-            productosTexto = data.map((p: any) => `- ${p.nombre}: $${p.precio} ${p.unidad ? '(' + p.unidad + ')' : ''}`).join('\n');
+            const byCategory: Record<string, any[]> = {};
+            data.forEach((p: any) => {
+                const cat = p.categoria || 'Otros';
+                if (!byCategory[cat]) byCategory[cat] = [];
+                byCategory[cat].push(p);
+            });
+
+            const emojis: Record<string, string> = {
+                'gas': '🔥',
+                'leña': '🪵',
+                'carbón': '🪨',
+                'alimentos': '🛒',
+                'agua': '💧',
+                'otros': '📦'
+            };
+            
+            const lineas = [];
+            for (const [cat, prods] of Object.entries(byCategory)) {
+                const catLower = cat.toLowerCase();
+                const emoji = emojis[catLower] || '📦';
+                lineas.push(`*[${cat.toUpperCase()}] ${emoji}*`);
+                prods.forEach(p => {
+                    const marcaStr = p.marca ? ` - ${p.marca}` : '';
+                    const cantStr = p.cantidad ? ` - ${p.cantidad}` : '';
+                    const uniStr = p.unidad ? ` ${p.unidad}` : '';
+                    
+                    let fotoStr = '';
+                    // Función para limpiar tildes y eñes
+                    const cleanStr = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ñ/g, 'n').replace(/Ñ/g, 'N');
+                    
+                    const cCat = cleanStr(catLower);
+                    const idNombre = cleanStr(p.nombre || '').toLowerCase().trim().replace(/\s+/g, '_');
+                    const idCantidad = cleanStr(`${p.cantidad || ''}${p.unidad || ''}`).toLowerCase().trim().replace(/\s+/g, '');
+                    const idMarca = cleanStr(p.marca || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+                    
+                    const idPartes = [idNombre, idCantidad, idMarca].filter(Boolean).join('_');
+                    const idFoto = `${cCat}/${idPartes}`;
+                    fotoStr = ` (ID_FOTO: ${idFoto})`;
+                    
+                    lineas.push(`- ${p.nombre}${marcaStr}${cantStr}${uniStr}: $${p.precio}${fotoStr}`);
+                });
+                lineas.push(''); // Línea en blanco para separar categorías
+            }
+            productosTexto = lineas.join('\n').trim();
         } else {
             productosTexto = '- No hay productos disponibles en este momento.';
         }
@@ -186,23 +300,43 @@ async function getDynamicSystemPrompt(): Promise<string> {
         productosTexto = '- (Error al consultar el catálogo. Por favor dile al cliente que espere unos minutos).';
     }
 
-    return `Eres el asistente virtual de "Los 2 Hermanos", una empresa de venta y reparto de gas, leña, carbón y alimentos.
+    return `Eres el asistente virtual de "Los 2 Hermanos", una empresa de venta y reparto de gas, leña, carbón y alimentos. Tu objetivo es tomar el pedido del cliente de forma ULTRA RÁPIDA, DIRECTA y SIMPLE asi informamos al cliente y nuestro chofer.
 
-*CATÁLOGO Y PRECIOS (Obtenidos en tiempo real de la Base de Datos):*
+*CATÁLOGO Y PRECIOS (Obtenidos en tiempo real):*
 ${productosTexto}
 
 *ZONAS DE ENVÍO:*
 - Casa Grande, Valle Hermoso, La Falda, Huerta Grande y Villa Giardino.
-- Costo de envío: $2000 adicionales al pedido.
+(El envío ya está incluido en los precios del catálogo).
 
-*INSTRUCCIONES CLAVE:*
-1. Sé amable, conciso y utiliza expresiones argentinas sutiles y amigables.
-2. Si el cliente quiere hacer un pedido, guíalo para que te dé: Producto, Cantidad, Dirección exacta y Forma de pago.
-3. IMPORTANTE SOBRE UBICACIONES: Nuestras zonas de envío son EXCLUSIVAMENTE Casa Grande, Valle Hermoso, La Falda, Huerta Grande y Villa Giardino. 
-- Si el cliente da una ubicación que claramente NO es de estas ciudades, RECHAZA amablemente el pedido indicando que está fuera de nuestra zona de cobertura.
+*HORARIOS DE ATENCIÓN:*
+- Repartos (lunes a sábados): de 9:00 a 14:00hs y de 17:00 a 20:30hs.
+- Depósito/Retiro por local: Corrido de 9:00 a 21:00hs.
+
+*Tono y Actitud:*
+- Amigable, casual y muy eficiente (como un cajero experimentado en hora pico).
+- Respuestas cortas (máximo 2 o 3 oraciones por mensaje).
+- NUNCA uses menús con números (ej: "Marca 1 para...").
+- NUNCA hagas preguntas innecesarias ni te extiendas en saludos formales.
+- Utiliza expresiones argentinas sutiles y amigables.
+
+*Tu objetivo principal es recolectar estos 4 datos:*
+1. Pedido (productos y cantidades).
+2. Modalidad (Delivery o Retiro en el local).
+3. Dirección de entrega (solo si es Delivery).
+4. Método de pago (Efectivo o Transferencia). ATENCIÓN: Si elige efectivo, debes preguntarle con qué billete abonará para calcular el vuelto.
+
+*Reglas de comportamiento y negocio:*
+- NUNCA uses lenguaje robótico ni agregues etiquetas como "[Esperando respuesta]". Eres un humano hablando por WhatsApp.
+- ATENCIÓN CON LAS BOLSITAS: La compra mínima para cualquier producto que sea "bolsita" (de leña, carbón, etc.) es de 2 unidades. Si piden solo 1, infórmales amablemente de esta condición.
+- Si el cliente te da varios datos en un solo mensaje (ej: "Hola, quiero un gas de 10kg a San Martín 123"), procesa lo que ya te dio y PREGUNTA ÚNICAMENTE LO QUE FALTA.
+- Si el pedido no es claro, pide aclaración rápidamente.
+- Una vez que tengas los 4 datos completos, muestra un resumen rápido del pedido y la dirección, calcula el total, y confirma que el pedido fue ingresado.
+- NUNCA inventes precios. Usa estrictamente los precios de la lista de arriba.
+- CUANDO EL CLIENTE PIDA LA LISTA DE PRECIOS: Si pide la lista general, debes mostrar SIEMPRE la lista completa de TODOS los productos en texto (SIN mandar fotos). Si pide los precios de una categoría específica (ej: "precios de leña"), debes mostrar los precios de esa categoría Y ADEMÁS incluir la etiqueta [FOTO_id_de_la_foto] correspondiente para CADA UNO de esos productos de esa categoría, así se le envían todas las imágenes juntas. ESTÁ ESTRICTAMENTE PROHIBIDO resumir la lista usando "...", "etc.", o frases como "y los demás según el catálogo". Debes transcribir cada uno de los productos solicitados uno por uno. IMPORTANTE: Al mostrar la lista al cliente, OMITE y NO IMPRIMAS la parte que dice "(ID_FOTO: ...)", esa información es solo para que sepas qué poner adentro del corchete [FOTO_...].
+- Si el cliente da una ubicación que claramente NO es de nuestras zonas de envío, RECHAZA amablemente el pedido indicando que está fuera de nuestra zona de cobertura.
 - ¡OJO! Dentro de nuestras zonas de envío existen calles que tienen nombres de provincias o países (ej: calle Santiago del Estero, Buenos Aires, Perú, etc). Si el cliente menciona una calle con nombre de provincia PERO especifica que está en una de nuestras ciudades (ej: "Santiago del Estero 770, La Falda"), es una dirección VÁLIDA. NUNCA le digas que esa dirección queda en otra provincia. Asume que es una calle local.
-4. NUNCA inventes precios. Usa estrictamente los precios de la lista de arriba, y recuérdale que el envío cuesta $2000 adicionales.
-5. Si ves un mensaje diciendo que hubo un error con un audio, pídele amablemente que escriba su consulta.`;
+- SI EL CLIENTE PIDE EXPLÍCITAMENTE UNA FOTO O IMAGEN DE UN PRODUCTO: debes incluir al final de tu respuesta EXACTAMENTE esta etiqueta: [FOTO_id_de_la_foto]. Debes reemplazar "id_de_la_foto" copiando exactamente el "ID_FOTO" que aparece entre paréntesis al lado del precio del producto en el catálogo. Por ejemplo, si el catálogo dice (ID_FOTO: gas/garrafa_15kg_ypf), la etiqueta debe ser [FOTO_gas/garrafa_15kg_ypf]. El sistema interceptará esto y enviará la foto real. NUNCA envíes fotos por defecto si no te las piden.`;
 }
 
 async function getAIResponse(userPhone: string, userMessage: string): Promise<string> {
@@ -217,10 +351,21 @@ async function getAIResponse(userPhone: string, userMessage: string): Promise<st
     // Añadimos el nuevo mensaje del usuario al historial
     conversationHistories[userPhone].push({ role: 'user', content: userMessage });
 
+    // Copiamos los mensajes para enviarlos a la IA
+    const messagesToSend = [...conversationHistories[userPhone]];
+    
+    // Si es el primer mensaje del usuario (historial tiene length 2: 1 system + 1 user)
+    if (conversationHistories[userPhone].length === 2) {
+        messagesToSend[1] = {
+            role: 'user', 
+            content: `${userMessage}\n\n[INSTRUCCIÓN DEL SISTEMA: Esta es tu primera respuesta al cliente. DEBES OBLIGATORIAMENTE responder EXACTAMENTE CON ESTE TEXTO, sin agregar nada más:\n"¡Hola! 👋 Soy el asistente de *Los 2 Hermanos*.\n¿Cómo te puedo ayudar hoy? ¿Querés consultar precios, hacer un pedido o tenés alguna otra consulta? ¡Estoy a tu disposición!"]`
+        };
+    }
+
     try {
         const completion = await groq.chat.completions.create({
             model: 'openai/gpt-oss-120b',
-            messages: conversationHistories[userPhone],
+            messages: messagesToSend,
         });
 
         const reply = completion?.choices?.[0]?.message?.content || 'Lo siento, tuve un problema al procesar tu solicitud.';
@@ -400,10 +545,25 @@ async function connectToWhatsApp() {
                 await sock.sendPresenceUpdate('composing', remoteJid);
 
                 // Obtener respuesta de la IA
-                const replyText = await getAIResponse(remoteJid, textMessage);
+                let replyText = await getAIResponse(remoteJid, textMessage);
 
-                // Enviar respuesta al usuario
-                await sock.sendMessage(remoteJid, { text: replyText });
+                let imagesToSend: string[] = [];
+                const photoRegex = /\[FOTO_([^\]]+)\]/g;
+                let match;
+                while ((match = photoRegex.exec(replyText)) !== null) {
+                    const imgPath = match[1];
+                    imagesToSend.push(`http://localhost:3000/flyers/${imgPath}.jpeg`);
+                }
+                replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
+
+                // Enviar todas las imágenes al usuario
+                for (const imgUrl of imagesToSend) {
+                    await sock.sendMessage(remoteJid, { image: { url: imgUrl } });
+                }
+                
+                if (replyText) {
+                    await sock.sendMessage(remoteJid, { text: replyText });
+                }
                 
                 // Finalizar estado de "Escribiendo..."
                 await sock.sendPresenceUpdate('paused', remoteJid);

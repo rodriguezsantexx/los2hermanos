@@ -5,7 +5,8 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "ts-node src/index.ts",
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node src/index.ts",
+    "simular": "ts-node src/simulador.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.2",

@@ -12,6 +12,7 @@ class PedidoCreate(BaseModel):
     localidad_id: str
     detalles: List[DetallePedidoCreate]
     metodo_pago: Optional[str] = None
+    tipo_pedido: Optional[str] = "Envío"
     observaciones: Optional[str] = None
 
 class PedidoStatusUpdate(BaseModel):

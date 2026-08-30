@@ -93,6 +93,11 @@ def delete_producto(producto_id: str):
             raise HTTPException(status_code=404, detail="Producto no encontrado")
         return {"message": "Producto eliminado correctamente"}
     except APIError as e:
+        if "foreign key constraint" in str(e).lower() or "violates foreign key" in str(e).lower():
+            raise HTTPException(
+                status_code=409,
+                detail="No se puede eliminar este producto porque ya tiene pedidos o movimientos de stock asociados."
+            )
         raise HTTPException(status_code=400, detail=e.message)
 
 @router.post("/{producto_id}/movimiento_stock")

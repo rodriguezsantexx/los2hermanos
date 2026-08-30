@@ -1,10 +1,15 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from typing import List
+import os
+import mercadopago
 from database.connection import supabase
 from schemas.pedido import PedidoCreate, PedidoStatusUpdate
 from auth.dependencies import get_current_user, admin_required
 
 router = APIRouter()
+
+mp_token = os.getenv("MERCADOPAGO_ACCESS_TOKEN")
+mp_sdk = mercadopago.SDK(mp_token) if mp_token else None
 
 @router.post("/")
 def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
@@ -46,16 +51,18 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
         "HUERTA GRANDE": "CHOFER_HUERTA_GRANDE",
         "VILLA GIARDINO": "CHOFER_HUERTA_GRANDE",
     }
-    rol_buscado = zonas_por_chofer.get(nombre_localidad)
-    if not rol_buscado:
-        raise HTTPException(status_code=400, detail=f"No hay una zona de reparto configurada para {nombre_localidad}")
-    
-    rol_res = supabase.table("roles").select("id").eq("nombre", rol_buscado).execute()
-    if not rol_res.data:
-        raise HTTPException(status_code=409, detail=f"No existe el rol {rol_buscado} en Supabase")
-    chofer_res = supabase.table("usuarios").select("id").eq("rol_id", rol_res.data[0]["id"]).execute()
-    
-    chofer_id = chofer_res.data[0]["id"] if chofer_res.data else None
+    chofer_id = None
+    if pedido.tipo_pedido != "Local":
+        rol_buscado = zonas_por_chofer.get(nombre_localidad)
+        if not rol_buscado:
+            raise HTTPException(status_code=400, detail=f"No hay una zona de reparto configurada para {nombre_localidad}")
+        
+        rol_res = supabase.table("roles").select("id").eq("nombre", rol_buscado).execute()
+        if not rol_res.data:
+            raise HTTPException(status_code=409, detail=f"No existe el rol {rol_buscado} en Supabase")
+        chofer_res = supabase.table("usuarios").select("id").eq("rol_id", rol_res.data[0]["id"]).execute()
+        
+        chofer_id = chofer_res.data[0]["id"] if chofer_res.data else None
     
     # 3. Crear pedido principal
     pedido_data = {
@@ -63,7 +70,8 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
         "localidad_id": pedido.localidad_id,
         "chofer_id": chofer_id,
         "total": total_calculado,
-        "estado": "Asignado" if chofer_id else "Pendiente",
+        "estado": "Asignado" if chofer_id else ("Pendiente" if pedido.tipo_pedido != "Local" else "Pendiente"),
+        "tipo_pedido": pedido.tipo_pedido,
         "metodo_pago": pedido.metodo_pago,
         "observaciones": pedido.observaciones
     }
@@ -96,7 +104,53 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
             "pedido_id": nuevo_pedido_id
         }).execute()
         
-    return {"message": "Pedido creado", "pedido_id": nuevo_pedido_id, "chofer_asignado": chofer_id}
+    mp_link = None
+    if pedido.metodo_pago in ["Transferencia", "MercadoPago"] and mp_sdk:
+        try:
+            preference_data = {
+                "items": [
+                    {
+                        "title": "Pedido Los 2 Hermanos",
+                        "quantity": 1,
+                        "unit_price": float(total_calculado)
+                    }
+                ],
+                "external_reference": nuevo_pedido_id,
+                # En producción, usa tu dominio real en vez de localhost
+                "notification_url": "https://tuservidor.ngrok.app/api/pedidos/webhook/mercadopago", 
+            }
+            preference_response = mp_sdk.preference().create(preference_data)
+            preference = preference_response["response"]
+            
+            if "id" in preference:
+                supabase.table("pedidos").update({"mp_preference_id": preference["id"]}).eq("id", nuevo_pedido_id).execute()
+                mp_link = preference.get("init_point")
+        except Exception as e:
+            print("Error creando preferencia MP:", str(e))
+        
+    return {"message": "Pedido creado", "pedido_id": nuevo_pedido_id, "chofer_asignado": chofer_id, "mp_link": mp_link}
+
+@router.post("/webhook/mercadopago")
+async def webhook_mercadopago(request: Request):
+    if not mp_sdk:
+        return {"status": "error", "message": "MP SDK no configurado"}
+        
+    data = await request.json()
+    print("WEBHOOK MP RECIBIDO:", data)
+    
+    if data.get("type") == "payment" or data.get("topic") == "payment":
+        payment_id = data.get("data", {}).get("id")
+        if payment_id:
+            payment_info = mp_sdk.payment().get(payment_id)
+            payment = payment_info.get("response")
+            
+            if payment and payment.get("status") == "approved":
+                pedido_id = payment.get("external_reference")
+                if pedido_id:
+                    print(f"Pago aprobado para el pedido {pedido_id}. Actualizando DB...")
+                    supabase.table("pedidos").update({"pago_verificado": True}).eq("id", pedido_id).execute()
+                    
+    return {"status": "success"}
 
 @router.get("/")
 def get_pedidos(current_user=Depends(get_current_user)):

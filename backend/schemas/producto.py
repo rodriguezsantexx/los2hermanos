@@ -5,9 +5,12 @@ from decimal import Decimal
 
 class ProductoBase(BaseModel):
     nombre: str
-    categoria_id: Optional[str] = None
+    categoria: str = "Gas"
     descripcion: Optional[str] = None
     precio: Decimal
+    precio_retiro: Optional[Decimal] = None
+    marca: Optional[str] = None
+    cantidad: Optional[str] = None
     unidad: Optional[str] = None
     stock_actual: int
     stock_minimo: int = 0
@@ -17,7 +20,11 @@ class ProductoCreate(ProductoBase):
 
 class ProductoUpdate(BaseModel):
     nombre: Optional[str] = None
+    categoria: Optional[str] = None
     precio: Optional[Decimal] = None
+    precio_retiro: Optional[Decimal] = None
+    marca: Optional[str] = None
+    cantidad: Optional[str] = None
     stock_minimo: Optional[int] = None
     estado: Optional[str] = None
 
