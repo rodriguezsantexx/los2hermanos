@@ -55,7 +55,7 @@ export default function WhatsappChat() {
     setInputMsg("");
     
     // Le pegamos al servidor Express del bot (que escucha en el puerto 3005)
-    await fetch('http://localhost:3005/api/send-message', {
+    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}"}/api/send-message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ telefono: selectedChat.telefono, mensaje: text })
@@ -70,14 +70,14 @@ export default function WhatsappChat() {
     try {
       // 1. Obtener productos y localidades
       const [prodRes, locRes] = await Promise.all([
-        fetch("http://localhost:8000/api/productos"),
-        fetch("http://localhost:8000/api/clientes/localidades")
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos"),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/localidades")
       ]);
       const productos = await prodRes.json();
       const localidades = await locRes.json();
 
       // 2. Extraer pedido
-      const extractRes = await fetch("http://localhost:3005/api/extract-order", {
+      const extractRes = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/extract-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: selectedChat.id, productos_disponibles: productos, localidades_disponibles: localidades })
@@ -94,7 +94,7 @@ export default function WhatsappChat() {
       let clienteId = null;
       let localidadId = pedidoExtraido.localidad_id || localidades[0]?.id; // Default si falla
       
-      const clientesRes = await fetch("http://localhost:8000/api/clientes", {
+      const clientesRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes", {
         headers: { "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }
       });
       const clientes = await clientesRes.json();
@@ -108,7 +108,7 @@ export default function WhatsappChat() {
         localidadId = clienteExistente.localidad_id || localidadId;
       } else {
         mostrarNotificacion("👤 Registrando nuevo cliente...");
-        const nuevoClienteRes = await fetch("http://localhost:8000/api/clientes/", {
+        const nuevoClienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` },
           body: JSON.stringify({
@@ -136,7 +136,7 @@ export default function WhatsappChat() {
         }))
       };
 
-      const pedidoRes = await fetch("http://localhost:8000/api/pedidos/", {
+      const pedidoRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos/", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` },
         body: JSON.stringify(payloadPedido)
@@ -148,7 +148,7 @@ export default function WhatsappChat() {
       
       // Mandar un mensaje automático al cliente
       const mensajeConfirmacion = `*¡Genial!* He registrado tu pedido de ${pedidoExtraido.detalles.length} producto(s). Estaremos en camino a la brevedad. Total a pagar estimado: Efectivo/Transferencia. ¡Gracias por elegir Los 2 Hermanos!`;
-      await fetch('http://localhost:3005/api/send-message', {
+      await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}"}/api/send-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ telefono: selectedChat.telefono, mensaje: mensajeConfirmacion })

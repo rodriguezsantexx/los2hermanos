@@ -24,7 +24,7 @@ type MovimientoStock = {
   } | null;
 };
 
-const API_URL = "http://localhost:8000/api/productos";
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos";
 
 export default function StockPage() {
   const [productos, setProductos] = useState<Producto[]>([]);

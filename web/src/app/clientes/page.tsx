@@ -65,7 +65,7 @@ export default function ClientesPage() {
 
   useEffect(() => {
     const checkStatus = () => {
-      fetch('http://localhost:3005/api/status')
+      fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}"}/api/status')
         .then(r => r.json())
         .then(setBotStatus)
         .catch(() => setBotStatus({ status: 'disconnected' }));
@@ -87,12 +87,12 @@ export default function ClientesPage() {
       })
       .subscribe();
       
-    fetch("http://localhost:8000/api/clientes/localidades")
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/localidades")
       .then(res => res.json())
       .then((data: Localidad[]) => { setLocalidades(data); if (data[0]) setClienteForm(prev => ({ ...prev, localidad_id: data[0].id })); })
       .catch(() => undefined);
       
-    fetch("http://localhost:8000/api/productos")
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos")
       .then(res => res.json())
       .then(setProductos)
       .catch(() => undefined);
@@ -151,7 +151,7 @@ export default function ClientesPage() {
     if (!mensaje.trim() || !chatActivo) return;
     const text = mensaje;
     setMensaje("");
-    await fetch('http://localhost:3005/api/send-message', {
+    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}"}/api/send-message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ telefono: chatActivo.telefono, mensaje: text })
@@ -160,7 +160,7 @@ export default function ClientesPage() {
 
   const crearCliente = async (event: React.FormEvent) => {
     event.preventDefault();
-    const res = await fetch("http://localhost:8000/api/clientes/", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify(clienteForm) });
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify(clienteForm) });
     if (!res.ok) { const data = await res.json(); alert(data.detail || "No se pudo crear el cliente"); return; }
     setClienteForm({ nombre: "", telefono: "", direccion: "", localidad_id: localidades[0]?.id || "" });
     setClienteModal(false);
@@ -175,7 +175,7 @@ export default function ClientesPage() {
       // 1. Asegurar que el cliente existe
       let cliente_id = "";
       const clienteData = { nombre: pedidoForm.nombre, telefono: pedidoForm.telefono, direccion: pedidoForm.direccion, localidad_id: pedidoForm.localidad_id };
-      const clienteRes = await fetch("http://localhost:8000/api/clientes/", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify(clienteData) });
+      const clienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify(clienteData) });
       if (clienteRes.ok) {
         const c = await clienteRes.json();
         cliente_id = c.id;
@@ -200,7 +200,7 @@ export default function ClientesPage() {
         observaciones: pedidoForm.observaciones
       };
 
-      const pedRes = await fetch("http://localhost:8000/api/pedidos/", {
+      const pedRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos/", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(pedidoPayload)
@@ -218,7 +218,7 @@ export default function ClientesPage() {
     if (!chatActivo) return;
     setLoadingIA(true);
     try {
-      const res = await fetch("http://localhost:3005/api/extract-order", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/extract-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -262,7 +262,7 @@ export default function ClientesPage() {
 
   const reiniciarBot = async () => {
     if (!confirm('¿Seguro que deseas borrar la sesión actual y generar un nuevo QR?')) return;
-    await fetch('http://localhost:3005/api/restart', { method: 'POST' });
+    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}"}/api/restart', { method: 'POST' });
     setBotStatus({ status: 'disconnected' });
   };
 

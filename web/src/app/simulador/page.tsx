@@ -48,7 +48,7 @@ export default function SimuladorPage() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('http://localhost:3005/api/simulate-message', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}"}/api/simulate-message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
