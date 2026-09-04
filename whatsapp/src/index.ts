@@ -107,15 +107,44 @@ app.post('/api/simulate-message', async (req: any, res: any) => {
             // Eliminar todas las etiquetas del texto
             replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
             
+            // Intercepción de PEDIDO_CONFIRMADO (Simulador)
+            if (replyText.includes('[PEDIDO_CONFIRMADO]')) {
+                try {
+                    const jsonStr = replyText.split('[PEDIDO_CONFIRMADO]')[1].trim();
+                    const pedidoData = JSON.parse(jsonStr);
+                    pedidoData.telefono = telefono;
+                    
+                    const backendRes = await fetch('http://127.0.0.1:8000/api/pedidos/bot', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(pedidoData)
+                    });
+                    
+                    const backendData = await backendRes.json();
+                    
+                    if (backendData.mp_link) {
+                        replyText = `¡Pedido confirmado y guardado! 🚀\n\nPodés abonarlo acá:\n👉 ${backendData.mp_link}`;
+                    } else {
+                        replyText = `¡Pedido confirmado y guardado exitosamente! 🚀`;
+                    }
+                } catch (e) {
+                    replyText = "Error al confirmar el pedido. Intentá de nuevo.";
+                }
+            }
+            
+            // Soportar múltiples burbujas de texto
+            const textMessages = replyText.split('|||').map(m => m.trim()).filter(Boolean);
+            const finalReply = textMessages.join('\n\n');
+            
             if (chatId) {
                 await supabase.from('whatsapp_chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
                 await supabase.from('whatsapp_mensajes').insert({
                     chat_id: chatId,
                     es_bot: true,
-                    mensaje: replyText
+                    mensaje: finalReply
                 });
             }
-            return res.json({ success: true, reply: replyText, images: imagesToSend });
+            return res.json({ success: true, reply: finalReply, images: imagesToSend });
         } else {
             return res.json({ success: true, reply: "[Modo Humano Activo] - La IA no respondió automáticamente." });
         }
@@ -320,18 +349,44 @@ ${productosTexto}
 - NUNCA hagas preguntas innecesarias ni te extiendas en saludos formales.
 - Utiliza expresiones argentinas sutiles y amigables.
 
-*Tu objetivo principal es recolectar estos 4 datos:*
-1. Pedido (productos y cantidades).
-2. Modalidad (Delivery o Retiro en el local).
-3. Dirección de entrega (solo si es Delivery).
-4. Método de pago (Efectivo o Transferencia). ATENCIÓN: Si elige efectivo, debes preguntarle con qué billete abonará para calcular el vuelto.
+*FLUJO ESTRICTO DE VENTAS (Debes seguir este orden sin saltarte pasos):*
+1. **PRODUCTOS:** Identifica qué productos quiere el cliente. SIEMPRE debes saludar primero. Si en su primer mensaje ya pide un producto (ej: "hola quiero una garrafa de 15 extragas"), salúdalo cortésmente y EN OTRO MENSAJE (separado por |||) avanza inmediatamente al paso 2.
+2. **UBICACIÓN:** Una vez que sabes qué productos quiere, pregúntale: "¿Sería para envío a domicilio o retirás por el local?"
+   - Si elige envío, pídele la dirección usando EXACTAMENTE este texto: "Dale. Para poder confirmar el pedido, mandame la dirección completa (calle, número y localidad), un link de Google Maps o el pin de ubicación."
+   - IMPORTANTE SOBRE MAPAS/PINES: Si el cliente envía un link de Maps o un Pin pero NO escribe el nombre de la calle, DEBES preguntarle la calle y altura exacta (ej: "¿Me podrías escribir el nombre de la calle y el número para anotarlo en el ticket de envío?"). El ticket final NUNCA debe decir "dirección enviada" o "link", DEBE tener escrita la calle, el número y la localidad para tranquilidad del cliente.
+   - Compara su ubicación con las zonas de envío permitidas. Si está fuera de zona, rechaza el pedido amablemente.
+3. **PAGO Y VUELTO:** Una vez confirmada una ubicación válida, pregúntale: "¿Abonás en efectivo o con transferencia (Mercado Pago)?"
+   - Si dice **Efectivo**, es OBLIGATORIO preguntarle con qué billete va a pagar para calcular el vuelto.
+   - Si dice **Transferencia**, dile que el link de pago se le enviará en el resumen final.
+4. **TICKET FINAL:** Cuando tengas Productos + Ubicación Válida + Método de Pago completo, genera un resumen así:
+   📋 *RESUMEN DE TU PEDIDO*
+   - [Producto 1] ($Monto)
+   🚚 *Envío a:* [Dirección]
+   💵 *Método de pago:* [Efectivo/Transferencia] (Aclarar vuelto si es efectivo)
+   💰 *TOTAL:* $[Total]
+   
+   ¿Está todo correcto para confirmar el pedido? (Responde SÍ o NO)
+
+5. **CONFIRMACIÓN Y EXTRACCIÓN (¡MUY IMPORTANTE!):** Si el cliente responde afirmativamente (ej: "sí", "dale", "ok") al Ticket Final, DEBES generar un ÚNICO mensaje que contenga EXCLUSIVAMENTE la siguiente etiqueta y estructura JSON. No agregues saludos ni texto adicional, SOLO este bloque para que el sistema lo procese:
+[PEDIDO_CONFIRMADO]
+{
+  "productos": [
+    {"nombre": "Bolsa de leña 100kg", "cantidad": 1},
+    {"nombre": "Garrafa de 15kg YPF", "cantidad": 1}
+  ],
+  "total": 72000,
+  "modalidad": "Delivery",
+  "direccion": "San Martin 123",
+  "localidad": "La Falda",
+  "metodo_pago": "Transferencia"
+}
 
 *Reglas de comportamiento y negocio:*
-- NUNCA uses lenguaje robótico ni agregues etiquetas como "[Esperando respuesta]". Eres un humano hablando por WhatsApp.
+- NUNCA uses lenguaje robótico. Eres un humano hablando por WhatsApp.
+- MULTIPLES MENSAJES: Si quieres enviar múltiples mensajes separados (en diferentes burbujas de chat), usa el separador "|||". Por ejemplo: "¡Hola! Buenas tardes. ||| ¿Sería para envío a domicilio o retirás por el local?". Úsalo para que la conversación fluya más natural.
 - ATENCIÓN CON LAS BOLSITAS: La compra mínima para cualquier producto que sea "bolsita" (de leña, carbón, etc.) es de 2 unidades. Si piden solo 1, infórmales amablemente de esta condición.
-- Si el cliente te da varios datos en un solo mensaje (ej: "Hola, quiero un gas de 10kg a San Martín 123"), procesa lo que ya te dio y PREGUNTA ÚNICAMENTE LO QUE FALTA.
+- Si el cliente te da varios datos en un solo mensaje (ej: "Hola, quiero un gas de 10kg a San Martín 123"), procesa lo que ya te dio, ignora las fases anteriores y PREGUNTA ÚNICAMENTE LA FASE QUE FALTA del Flujo Estricto.
 - Si el pedido no es claro, pide aclaración rápidamente.
-- Una vez que tengas los 4 datos completos, muestra un resumen rápido del pedido y la dirección, calcula el total, y confirma que el pedido fue ingresado.
 - NUNCA inventes precios. Usa estrictamente los precios de la lista de arriba.
 - CUANDO EL CLIENTE PIDA LA LISTA DE PRECIOS: Si pide la lista general, debes mostrar SIEMPRE la lista completa de TODOS los productos en texto (SIN mandar fotos). Si pide los precios de una categoría específica (ej: "precios de leña"), debes mostrar los precios de esa categoría Y ADEMÁS incluir la etiqueta [FOTO_id_de_la_foto] correspondiente para CADA UNO de esos productos de esa categoría, así se le envían todas las imágenes juntas. ESTÁ ESTRICTAMENTE PROHIBIDO resumir la lista usando "...", "etc.", o frases como "y los demás según el catálogo". Debes transcribir cada uno de los productos solicitados uno por uno. IMPORTANTE: Al mostrar la lista al cliente, OMITE y NO IMPRIMAS la parte que dice "(ID_FOTO: ...)", esa información es solo para que sepas qué poner adentro del corchete [FOTO_...].
 - Si el cliente da una ubicación que claramente NO es de nuestras zonas de envío, RECHAZA amablemente el pedido indicando que está fuera de nuestra zona de cobertura.
@@ -556,13 +611,47 @@ async function connectToWhatsApp() {
                 }
                 replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
 
+                // Intercepción de PEDIDO_CONFIRMADO
+                if (replyText.includes('[PEDIDO_CONFIRMADO]')) {
+                    try {
+                        const jsonStr = replyText.split('[PEDIDO_CONFIRMADO]')[1].trim();
+                        const pedidoData = JSON.parse(jsonStr);
+                        pedidoData.telefono = remoteJid.replace('@s.whatsapp.net', '');
+                        
+                        // Enviar al backend de Python
+                        const backendRes = await fetch('http://127.0.0.1:8000/api/pedidos/bot', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(pedidoData)
+                        });
+                        
+                        const backendData = await backendRes.json();
+                        
+                        if (backendData.mp_link) {
+                            replyText = `¡Pedido confirmado y guardado! 🚀\n\nPodés abonarlo escaneando o tocando el siguiente link de Mercado Pago:\n👉 ${backendData.mp_link}\n\nUna vez realizado, nuestro sistema lo detectará y el chofer saldrá para allá. ¡Muchas gracias!`;
+                        } else {
+                            replyText = `¡Pedido confirmado y guardado exitosamente! 🚀\n\nYa lo anoté en nuestro sistema y el chofer lo llevará a la brevedad. ¡Cualquier otra cosa que necesites, avisame!`;
+                        }
+                    } catch (e) {
+                        console.error("Error parseando o enviando pedido:", e);
+                        replyText = "Ocurrió un error al intentar guardar tu pedido en el sistema. Por favor, intentá confirmarlo nuevamente en unos minutos.";
+                    }
+                }
+
                 // Enviar todas las imágenes al usuario
                 for (const imgUrl of imagesToSend) {
                     await sock.sendMessage(remoteJid, { image: { url: imgUrl } });
                 }
                 
                 if (replyText) {
-                    await sock.sendMessage(remoteJid, { text: replyText });
+                    const textBubbles = replyText.split('|||').map(m => m.trim()).filter(Boolean);
+                    for (const textBubble of textBubbles) {
+                        await sock.sendMessage(remoteJid, { text: textBubble });
+                        // Pequeña pausa para simular escritura si hay múltiples mensajes
+                        if (textBubbles.length > 1) {
+                            await new Promise(resolve => setTimeout(resolve, 800));
+                        }
+                    }
                 }
                 
                 // Finalizar estado de "Escribiendo..."

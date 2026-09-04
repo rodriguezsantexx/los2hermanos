@@ -116,8 +116,8 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
                     }
                 ],
                 "external_reference": nuevo_pedido_id,
-                # En producción, usa tu dominio real en vez de localhost
-                "notification_url": "https://tuservidor.ngrok.app/api/pedidos/webhook/mercadopago", 
+                # Usamos la URL pública configurada en .env o localhost por defecto
+                "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago", 
             }
             preference_response = mp_sdk.preference().create(preference_data)
             preference = preference_response["response"]
@@ -129,6 +129,138 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
             print("Error creando preferencia MP:", str(e))
         
     return {"message": "Pedido creado", "pedido_id": nuevo_pedido_id, "chofer_asignado": chofer_id, "mp_link": mp_link}
+
+from pydantic import BaseModel
+class ProductoPedidoBot(BaseModel):
+    nombre: str
+    cantidad: int
+    precio_unitario: float = 0 # Opcional si lo buscamos por nombre
+    
+class PedidoBot(BaseModel):
+    productos: List[ProductoPedidoBot]
+    total: float
+    direccion: str
+    localidad: str
+    modalidad: str = "Delivery"
+    metodo_pago: str
+    telefono: str
+
+@router.post("/bot")
+def create_pedido_bot(pedido: PedidoBot):
+    # 1. Buscar o crear cliente
+    cliente_res = supabase.table("clientes").select("id").eq("telefono", pedido.telefono).execute()
+    cliente_id = None
+    if not cliente_res.data:
+        nuevo_cli = supabase.table("clientes").insert({
+            "nombre": "Cliente de WhatsApp",
+            "telefono": pedido.telefono,
+            "direccion": pedido.direccion
+        }).execute()
+        cliente_id = nuevo_cli.data[0]["id"]
+    else:
+        cliente_id = cliente_res.data[0]["id"]
+        
+    # 2. Buscar localidad y asignar chofer
+    loc_res = supabase.table("localidades").select("id, nombre").ilike("nombre", f"%{pedido.localidad}%").execute()
+    localidad_id = None
+    chofer_id = None
+    if loc_res.data:
+        localidad_id = loc_res.data[0]["id"]
+        nombre_localidad = loc_res.data[0]["nombre"].upper()
+        
+        zonas_por_chofer = {
+            "LA FALDA": "CHOFER_LA_FALDA",
+            "VALLE HERMOSO": "CHOFER_LA_FALDA",
+            "CASA GRANDE": "CHOFER_LA_FALDA",
+            "HUERTA GRANDE": "CHOFER_HUERTA_GRANDE",
+            "VILLA GIARDINO": "CHOFER_HUERTA_GRANDE",
+        }
+        rol_buscado = zonas_por_chofer.get(nombre_localidad)
+        if rol_buscado:
+            rol_res = supabase.table("roles").select("id").eq("nombre", rol_buscado).execute()
+            if rol_res.data:
+                chofer_res = supabase.table("usuarios").select("id").eq("rol_id", rol_res.data[0]["id"]).execute()
+                chofer_id = chofer_res.data[0]["id"] if chofer_res.data else None
+    
+    # 3. Calcular detalles buscando productos por nombre aproximado
+    detalles = []
+    total_calc = 0
+    for p in pedido.productos:
+        prod_res = supabase.table("productos").select("id, precio").ilike("nombre", f"%{p.nombre}%").execute()
+        if prod_res.data:
+            pid = prod_res.data[0]["id"]
+            precio = prod_res.data[0]["precio"]
+            sub = precio * p.cantidad
+            total_calc += sub
+            detalles.append({
+                "producto_id": pid,
+                "cantidad": p.cantidad,
+                "precio_unitario": precio,
+                "subtotal": sub
+            })
+            
+    # 4. Crear pedido principal
+    pedido_data = {
+        "cliente_id": cliente_id,
+        "localidad_id": localidad_id,
+        "chofer_id": chofer_id,
+        "total": total_calc or pedido.total,
+        "estado": "Asignado" if chofer_id else "Pendiente",
+        "tipo_pedido": pedido.modalidad,
+        "metodo_pago": pedido.metodo_pago,
+        "observaciones": "Creado por Bot WhatsApp"
+    }
+    
+    nuevo_pedido_res = supabase.table("pedidos").insert(pedido_data).execute()
+    nuevo_pedido_id = nuevo_pedido_res.data[0]["id"]
+    
+    # 5. Insertar detalles
+    for det in detalles:
+        det["pedido_id"] = nuevo_pedido_id
+    if detalles:
+        supabase.table("detalle_pedidos").insert(detalles).execute()
+        
+        # Descontar stock
+        for det in detalles:
+            prod_res = supabase.table("productos").select("stock_actual").eq("id", det["producto_id"]).execute()
+            if prod_res.data:
+                nuevo_stock = prod_res.data[0]["stock_actual"] - det["cantidad"]
+                supabase.table("productos").update({"stock_actual": nuevo_stock}).eq("id", det["producto_id"]).execute()
+                
+                # Registrar movimiento
+                supabase.table("movimientos_stock").insert({
+                    "producto_id": det["producto_id"],
+                    "cantidad": det["cantidad"],
+                    "tipo": "Salida",
+                    "motivo": f"Pedido WhatsApp #{nuevo_pedido_id}",
+                    "pedido_id": nuevo_pedido_id
+                }).execute()
+        
+    # 6. Mercado Pago
+    mp_link = None
+    if "transferencia" in pedido.metodo_pago.lower() or "mercado pago" in pedido.metodo_pago.lower():
+        if mp_sdk:
+            try:
+                preference_data = {
+                    "items": [
+                        {
+                            "title": "Pedido WhatsApp Los 2 Hermanos",
+                            "quantity": 1,
+                            "unit_price": float(total_calc or pedido.total)
+                        }
+                    ],
+                    "external_reference": nuevo_pedido_id,
+                    "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago", 
+                }
+                preference_response = mp_sdk.preference().create(preference_data)
+                preference = preference_response["response"]
+                if "id" in preference:
+                    supabase.table("pedidos").update({"mp_preference_id": preference["id"]}).eq("id", nuevo_pedido_id).execute()
+                    mp_link = preference.get("init_point")
+            except Exception as e:
+                print("Error creando MP para Bot:", str(e))
+                
+    return {"message": "Pedido guardado", "pedido_id": nuevo_pedido_id, "mp_link": mp_link}
 
 @router.post("/webhook/mercadopago")
 async def webhook_mercadopago(request: Request):
@@ -163,6 +295,10 @@ def get_pedidos(current_user=Depends(get_current_user)):
         
     res = query.order("created_at", desc=True).execute()
     return res.data
+
+@router.post("/{pedido_id}/estado")
+def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get_current_user)):
+    return supabase.table("pedidos").update({"estado": "En reparto"}).eq("id", pedido_id).execute().data
 
 @router.post("/{pedido_id}/entregar")
 def entregar_pedido(pedido_id: str, update: PedidoStatusUpdate, current_user=Depends(get_current_user)):
