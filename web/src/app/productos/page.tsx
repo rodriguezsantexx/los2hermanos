@@ -166,7 +166,7 @@ function ProductosContent() {
     setUpdatingId(producto.id);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/${producto.id}`, {
-        method: `PUT",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ precio: nuevoPrecio, precio_retiro: nuevoPrecioRetiro }),
       });
@@ -197,7 +197,7 @@ function ProductosContent() {
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/${producto.id}`, {
-        method: `DELETE",
+        method: "DELETE",
       });
       if (!res.ok) {
         const errData = await res.json();

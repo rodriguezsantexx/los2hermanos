@@ -219,7 +219,7 @@ export default function ClientesPage() {
     setLoadingIA(true);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/extract-order`, {
-        method: `POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatActivo.id,

@@ -78,7 +78,7 @@ export default function WhatsappChat() {
 
       // 2. Extraer pedido
       const extractRes = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/extract-order`, {
-        method: `POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: selectedChat.id, productos_disponibles: productos, localidades_disponibles: localidades })
       });
