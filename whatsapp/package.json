@@ -4,7 +4,8 @@
   "description": "Bot de WhatsApp usando Baileys y OpenRouter",
   "main": "src/index.ts",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
     "dev": "ts-node src/index.ts",
     "simular": "ts-node src/simulador.ts"
   },
