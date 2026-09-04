@@ -65,7 +65,7 @@ export default function ClientesPage() {
 
   useEffect(() => {
     const checkStatus = () => {
-      fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}`}/api/status')
+      fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/status`)
         .then(r => r.json())
         .then(setBotStatus)
         .catch(() => setBotStatus({ status: 'disconnected' }));
@@ -151,7 +151,7 @@ export default function ClientesPage() {
     if (!mensaje.trim() || !chatActivo) return;
     const text = mensaje;
     setMensaje("");
-    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}`}/api/send-message`, {
+    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/send-message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ telefono: chatActivo.telefono, mensaje: text })
@@ -262,7 +262,7 @@ export default function ClientesPage() {
 
   const reiniciarBot = async () => {
     if (!confirm('¿Seguro que deseas borrar la sesión actual y generar un nuevo QR?')) return;
-    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}`}/api/restart', { method: 'POST' });
+    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/restart`, { method: 'POST' });
     setBotStatus({ status: 'disconnected' });
   };
 

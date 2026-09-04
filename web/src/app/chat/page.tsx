@@ -55,7 +55,7 @@ export default function WhatsappChat() {
     setInputMsg("");
     
     // Le pegamos al servidor Express del bot (que escucha en el puerto 3005)
-    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}`}/api/send-message`, {
+    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/send-message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ telefono: selectedChat.telefono, mensaje: text })
@@ -148,7 +148,7 @@ export default function WhatsappChat() {
       
       // Mandar un mensaje automático al cliente
       const mensajeConfirmacion = `*¡Genial!* He registrado tu pedido de ${pedidoExtraido.detalles.length} producto(s). Estaremos en camino a la brevedad. Total a pagar estimado: Efectivo/Transferencia. ¡Gracias por elegir Los 2 Hermanos!`;
-      await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || `${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}`}/api/send-message`, {
+      await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/send-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ telefono: selectedChat.telefono, mensaje: mensajeConfirmacion })
