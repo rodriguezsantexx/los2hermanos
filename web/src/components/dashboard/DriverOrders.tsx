@@ -24,7 +24,6 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
   const [pedidos, setPedidos] = useState<DriverOrder[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
-  const [metodos, setMetodos] = useState<Record<string, string>>({});
 
   const cargar = async () => {
     try { setPedidos((await apiFetch<ApiPedido[]>("/api/pedidos")).map(normalize)); }
