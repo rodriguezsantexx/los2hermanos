@@ -240,8 +240,9 @@ ${historyText}`;
     }
 });
 
-app.listen(3005, () => {
-    console.log('Servidor de API interno corriendo en puerto 3005');
+const PORT = process.env.PORT || 3005;
+app.listen(PORT, () => {
+    console.log(`Servidor de API interno corriendo en puerto ${PORT}`);
 });
 // Inicializamos el cliente de OpenAI configurado para OpenRouter
 const openai = new OpenAI({
