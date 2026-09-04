@@ -60,6 +60,8 @@ export default function WhatsappChat() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ telefono: selectedChat.telefono, mensaje: text })
     });
+  };
+
   const generarPedidoConIA = async () => {
     if (!selectedChat) return;
     setGenerandoPedido(true);
