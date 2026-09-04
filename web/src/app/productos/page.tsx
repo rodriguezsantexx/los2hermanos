@@ -51,8 +51,8 @@ function ProductosContent() {
     try {
       setLoading(true);
       const [res, movRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos"),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/movimientos_stock?limit=12"),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/movimientos_stock?limit=12`),
       ]);
       if (!res.ok || !movRes.ok) throw new Error("Error al cargar productos");
       const data = await res.json();
@@ -88,7 +88,7 @@ function ProductosContent() {
     e.preventDefault();
     if (!stockModal) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/${stockModal.id}/movimiento_stock`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cantidad: Number(stockForm.cantidad), tipo: stockForm.tipo, motivo: stockForm.motivo.trim() }) });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/${stockModal.id}/movimiento_stock`, { method: `POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cantidad: Number(stockForm.cantidad), tipo: stockForm.tipo, motivo: stockForm.motivo.trim() }) });
       if (!res.ok) { const data = await res.json(); throw new Error(data.detail || "Error al ajustar stock"); }
       setStockModal(null);
       setStockForm({ cantidad: "", tipo: "Entrada", motivo: "Compra" });
@@ -99,7 +99,7 @@ function ProductosContent() {
   const handleRename = async (producto: Producto) => {
     const nombre = nombreEditado.trim();
     if (!nombre || !renamingProducto || nombre === renamingProducto.nombre) return;
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/${renamingProducto.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nombre }) });
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/${renamingProducto.id}`, { method: `PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nombre }) });
     if (!res.ok) { const data = await res.json(); alert(data.detail || "No se pudo cambiar el nombre"); return; }
     setProductos(prev => prev.map(p => p.id === renamingProducto.id ? { ...p, nombre } : p));
     setRenamingProducto(null);
@@ -126,7 +126,7 @@ function ProductosContent() {
         cantidad: formData.cantidad || undefined,
       };
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -166,7 +166,7 @@ function ProductosContent() {
     setUpdatingId(producto.id);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/${producto.id}`, {
-        method: "PUT",
+        method: `PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ precio: nuevoPrecio, precio_retiro: nuevoPrecioRetiro }),
       });
@@ -197,7 +197,7 @@ function ProductosContent() {
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos/${producto.id}`, {
-        method: "DELETE",
+        method: `DELETE",
       });
       if (!res.ok) {
         const errData = await res.json();
