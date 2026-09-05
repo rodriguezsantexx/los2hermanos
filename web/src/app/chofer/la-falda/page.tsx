@@ -1,6 +1,6 @@
 import RoleGuard from "@/components/auth/RoleGuard";
-import DriverOrders from "@/components/dashboard/DriverOrders";
+import DriverHome from "@/components/dashboard/DriverHome";
 
 export default function ChoferLaFaldaPage() {
-  return <RoleGuard allowedRole="CHOFER_LA_FALDA"><DriverOrders localidad="La Falda" /></RoleGuard>;
+  return <RoleGuard allowedRole="CHOFER_LA_FALDA"><DriverHome localidad="La Falda" /></RoleGuard>;
 }
