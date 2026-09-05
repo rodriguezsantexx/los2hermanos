@@ -456,7 +456,6 @@ export default function ClientesPage() {
                   <select value={pedidoForm.metodo_pago} onChange={e => setPedidoForm({...pedidoForm, metodo_pago: e.target.value})} className="w-full border rounded-lg p-2 text-sm outline-none focus:border-primary">
                     <option value="Efectivo">Efectivo</option>
                     <option value="Transferencia">Transferencia</option>
-                    <option value="Fiado">Fiado (Cuenta Corriente)</option>
                   </select>
                 </div>
               </div>

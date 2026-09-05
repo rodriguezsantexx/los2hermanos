@@ -18,7 +18,7 @@ async function clearData() {
   console.log("Limpiando datos de prueba...");
 
   // ORDEN DE BORRADO IMPORTANTE (Por las Foreign Keys):
-  // 1. Movimientos cuenta corriente y caja (dependen de pedidos/clientes)
+  // 1. Movimientos de caja (dependen de pedidos/clientes)
   // 2. Ventas (dependen de pedidos)
   // 3. Detalle Pedidos (dependen de pedidos)
   // 4. Pagos (dependen de clientes)
@@ -27,7 +27,6 @@ async function clearData() {
   // 7. Clientes
 
   const tables = [
-    'movimientos_cuenta_corriente',
     'movimientos_caja',
     'ventas',
     'detalle_pedidos',

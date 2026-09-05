@@ -15,8 +15,3 @@ class MovimientoCajaCreate(BaseModel):
     monto: Decimal = Field(gt=0)
     metodo_pago: str = Field(min_length=2, max_length=50)
     descripcion: Optional[str] = None
-
-
-class AbonoCuentaCreate(BaseModel):
-    monto: Decimal = Field(gt=0)
-    metodo_pago: str = Field(min_length=2, max_length=50)

@@ -13,7 +13,6 @@ type DashboardMetrics = {
   ingresos_caja: number; 
   egresos_caja: number; 
   saldo_caja: number; 
-  cuenta_corriente_total: number;
 };
 type CajaResumen = { ingresos: number; egresos: number; saldo: number; movimientos: Movimiento[] };
 
@@ -46,7 +45,7 @@ export default function AdminDashboard() {
       </header>
 
       {/* Tarjetas de Resumen (Métricas Clave) */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+      <section className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
         <div onClick={() => router.push("/historial")} className="card !bg-primary !text-white border-none shadow-lg shadow-primary/20 cursor-pointer hover:scale-[1.02] transition-transform">
           <p className="text-blue-200 font-medium text-sm tracking-wider">VENTAS</p>
           <p className="text-white text-3xl md:text-4xl font-black mt-2 drop-shadow-sm">${(metrics?.ventas_total ?? 0).toLocaleString("es-AR")}</p>
@@ -58,10 +57,6 @@ export default function AdminDashboard() {
         <div className="card">
           <p className="text-muted font-medium text-sm tracking-wider">SALDO CAJA</p>
           <p className="text-3xl md:text-4xl font-black text-gray-900 mt-2">${(metrics?.saldo_caja ?? 0).toLocaleString("es-AR")}</p>
-        </div>
-        <div className="card">
-          <p className="text-muted font-medium text-sm tracking-wider">CTA. CTE.</p>
-          <p className="text-3xl md:text-4xl font-black text-gray-900 mt-2">${(metrics?.cuenta_corriente_total ?? 0).toLocaleString("es-AR")}</p>
         </div>
       </section>
 

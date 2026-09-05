@@ -47,7 +47,6 @@ const infoPago = (pago: string) => {
     case "Efectivo": return { icono: "💵", clase: "bg-emerald-50 text-emerald-700 ring-emerald-200" };
     case "Transferencia": return { icono: "🏦", clase: "bg-blue-50 text-blue-700 ring-blue-200" };
     case "MercadoPago": return { icono: "📱", clase: "bg-sky-50 text-sky-700 ring-sky-200" };
-    case "Fiado": return { icono: "📒", clase: "bg-amber-50 text-amber-700 ring-amber-200" };
     default: return { icono: "⏳", clase: "bg-gray-50 text-gray-600 ring-gray-200" };
   }
 };
@@ -315,7 +314,7 @@ function PedidosContent() {
               <label className="block text-sm font-medium text-gray-700">
                 Método de pago
                 <select value={pago} onChange={(e) => setPago(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 p-3">
-                  <option>A confirmar</option><option>Efectivo</option><option>Transferencia</option><option>Fiado</option>
+                  <option>A confirmar</option><option>Efectivo</option><option>Transferencia</option>
                 </select>
               </label>
             </div>

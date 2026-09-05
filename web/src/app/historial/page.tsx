@@ -26,7 +26,6 @@ const normalizarPago = (pago?: string) => {
   const p = pago.toLowerCase();
   if (p.includes("transferencia") || p.includes("mercado") || p.includes("digital")) return "Digital";
   if (p.includes("efectivo")) return "Efectivo";
-  if (p.includes("fiado")) return "Fiado";
   return pago;
 };
 
@@ -34,7 +33,6 @@ const infoPago = (pago: string) => {
   switch (pago) {
     case "Efectivo": return { icono: "💵", clase: "bg-emerald-50 text-emerald-700" };
     case "Digital": return { icono: "📲", clase: "bg-blue-50 text-blue-700" };
-    case "Fiado": return { icono: "📒", clase: "bg-amber-50 text-amber-700" };
     default: return { icono: "⏳", clase: "bg-gray-50 text-gray-600" };
   }
 };
@@ -71,7 +69,6 @@ export default function HistorialVentasPage() {
   const cierre = {
     Efectivo: totalPorPago("Efectivo"),
     Digital: totalPorPago("Digital"),
-    Fiado: totalPorPago("Fiado"),
     total: entregados.reduce((sum, p) => sum + Number(p.total || 0), 0),
   };
 
@@ -168,11 +165,10 @@ export default function HistorialVentasPage() {
           <h3 className="text-sm font-bold uppercase tracking-wider text-muted">Cierre de caja</h3>
           <span className="text-xs text-muted">{entregados.length} entregados {modo === "dia" ? "hoy" : "en el mes"}</span>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
             { pago: "Efectivo", monto: cierre.Efectivo },
             { pago: "Digital", monto: cierre.Digital },
-            { pago: "Fiado", monto: cierre.Fiado },
           ].map(({ pago, monto }) => {
             const info = infoPago(pago);
             return (

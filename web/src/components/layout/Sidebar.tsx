@@ -31,7 +31,7 @@ export default function Sidebar() {
   const menu = [
     { name: "Inicio", icon: "🏠", path: homePath },
     { name: "Pedidos", icon: "📦", path: pedidosPath },
-    ...(showAdminMenu ? [{ name: "Historial de Ventas", icon: "📊", path: "/historial" }, { name: "Productos", icon: "🛒", path: "/productos" }, { name: "Clientes", icon: "👥", path: "/clientes" }, { name: "Cuenta corriente", icon: "📒", path: "/cuenta-corriente" }] : [])
+    ...(showAdminMenu ? [{ name: "Historial de Ventas", icon: "📊", path: "/historial" }, { name: "Productos", icon: "🛒", path: "/productos" }, { name: "Clientes", icon: "👥", path: "/clientes" }] : [])
   ];
 
   return (

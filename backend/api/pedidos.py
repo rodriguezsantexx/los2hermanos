@@ -445,29 +445,13 @@ def entregar_pedido(pedido_id: str, update: PedidoStatusUpdate, current_user=Dep
         "metodo_pago": update.metodo_pago
     }).execute()
     
-    # Registrar Caja (solo si ingresa plata real, si es fiado no entra a caja)
-    if update.metodo_pago.lower() != "fiado":
-        supabase.table("movimientos_caja").insert({
-            "tipo": "Ingreso",
-            "monto": pedido["total"],
-            "metodo_pago": update.metodo_pago,
-            "usuario_id": current_user["id"],
-            "descripcion": f"Venta Pedido #{pedido_id}"
-        }).execute()
-    
-    # Si es fiado, cuenta corriente
-    if update.metodo_pago.lower() == "fiado":
-        # Sumar deuda al cliente
-        cliente_res = supabase.table("clientes").select("saldo_corriente").eq("id", pedido["cliente_id"]).execute()
-        nuevo_saldo = cliente_res.data[0]["saldo_corriente"] + pedido["total"]
-        supabase.table("clientes").update({"saldo_corriente": nuevo_saldo}).eq("id", pedido["cliente_id"]).execute()
-        
-        # Movimiento CC
-        supabase.table("movimientos_cuenta_corriente").insert({
-            "cliente_id": pedido["cliente_id"],
-            "monto": pedido["total"],
-            "tipo": "Cargo",
-            "pedido_id": pedido_id
-        }).execute()
+    # Registrar Caja (ingreso de plata real)
+    supabase.table("movimientos_caja").insert({
+        "tipo": "Ingreso",
+        "monto": pedido["total"],
+        "metodo_pago": update.metodo_pago,
+        "usuario_id": current_user["id"],
+        "descripcion": f"Venta Pedido #{pedido_id}"
+    }).execute()
         
     return {"message": "Pedido entregado y registrado exitosamente"}

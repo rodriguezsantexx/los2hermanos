@@ -209,7 +209,7 @@ Estructura deseada:
 {
   "direccion": "Calle y número exacto extraído de la conversación. Si no hay, dejar vacío",
   "localidad_id": "Compara la localidad mencionada y elige el ID correcto de esta lista (ignora mayusculas/minusculas). Lista: ${JSON.stringify(localidades_disponibles)}. Si no menciona ninguna o no coincide, dejar vacío",
-  "metodo_pago": "Efectivo, Transferencia o Fiado. Por defecto Efectivo si no dice nada.",
+  "metodo_pago": "Efectivo o Transferencia. Por defecto Efectivo si no dice nada.",
   "detalles": [
     {
        "producto_id": "Elige el ID correcto de esta lista: ${JSON.stringify(productos_disponibles.map((p:any) => ({id: p.id, nombre: p.nombre})))}",
