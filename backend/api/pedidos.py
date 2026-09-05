@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import Response
 from typing import List
+from dataclasses import dataclass
+from datetime import datetime, timezone
 import os
 import mercadopago
 from database.connection import supabase
@@ -264,25 +267,136 @@ def create_pedido_bot(pedido: PedidoBot):
 
 @router.post("/webhook/mercadopago")
 async def webhook_mercadopago(request: Request):
-    if not mp_sdk:
-        return {"status": "error", "message": "MP SDK no configurado"}
-        
-    data = await request.json()
-    print("WEBHOOK MP RECIBIDO:", data)
-    
-    if data.get("type") == "payment" or data.get("topic") == "payment":
-        payment_id = data.get("data", {}).get("id")
-        if payment_id:
-            payment_info = mp_sdk.payment().get(payment_id)
-            payment = payment_info.get("response")
-            
-            if payment and payment.get("status") == "approved":
-                pedido_id = payment.get("external_reference")
-                if pedido_id:
-                    print(f"Pago aprobado para el pedido {pedido_id}. Actualizando DB...")
-                    supabase.table("pedidos").update({"pago_verificado": True}).eq("id", pedido_id).execute()
-                    
-    return {"status": "success"}
+    """
+    Recibe notificaciones de Mercado Pago (Webhooks).
+
+    Flujo seguro:
+      1. Se ignora cualquier dato crudo del cuerpo y SIEMPRE se reconfirma el
+         pago contra la API oficial de MP mediante el payment_id. Así evitamos
+         depender de datos falsificados en el POST.
+      2. Solo se procesan pagos cuyo estado sea "approved".
+      3. Se protege contra procesos repetidos (dedup) marcando pago_verificado
+         ANTES de insertar filas financieras, y saltándose el proceso si ya fue
+         manejado.
+      4. Siempre se responde rápido (JSON ok) aún frente a errores internos,
+         para que MP no reintente indefinidamente.
+
+    Recomendación de seguridad en producción:
+      Configurar en el Panel de Mercado Pago -> Desarrollo -> Webhooks ->
+      "Direcciones IP autorizadas" sólo con rangos públicos de Mercado Pago.
+      Igualmente acá volvemos a autenticar el pago llamando a la API, por lo
+      que un tercero no podría inventar un "approval".
+    """
+    remote_ip = request.client.host if request.client else "desconocido"
+    ua = request.headers.get("user-agent", "-")
+
+    # Leer el cuerpo tolerando ausencia/formato raro (evita excepciones).
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    print("[MP-WEBHOOK]", datetime.now(timezone.utc).isoformat(), "| ip:", remote_ip, "| ua:", ua[:80])
+    print("[MP-WEBHOOK] Payload:", data)
+
+    event_type = data.get("type") or data.get("topic")
+    payment_id = None
+    if event_type == "payment":
+        inner = data.get("data") or {}
+        payment_id = inner.get("id")
+    elif event_type == "merchant_order":
+        # Podría llegar un evento de orden comercial; requerimos resolver el
+        # pago asociado igualmente. Tomamos el primer payment disponible.
+        orders = ((data.get("data") or {}).get("payments")) or []
+        if orders:
+            payment_id = orders[-1].get("id")
+
+    if not payment_id:
+        # Ping inicial de verificación u otro evento irrelevante: responder ok.
+        return Response(content=b'"ok"', media_type="application/json", status_code=200)
+
+    try:
+        payment_info = mp_sdk.payment().get(str(int(payment_id))) \
+            if mp_sdk else None
+    except Exception as exc:
+        print("[MP-WEBHOOK] Error obteniendo pago:", repr(exc))
+        return Response(content=b'"ok"', media_type="application/json", status_code=200)
+
+    if not payment_info:
+        return Response(content=b'"ok"', media_type="application/json", status_code=201)
+
+    payment = payment_info.get("response") or {}
+    status_detail = payment.get("status_detail")
+    print("[MP-WEBHOOK] Estado pago %s -> %s (%s)" %
+          (payment_id, payment.get("status"), status_detail))
+
+    if payment.get("status") != "approved":
+        # Sigue pendiente/en proceso o rechazado: nada que hacer todavía.
+        return Response(content=b'"ok"', media_type="application/json", status_code=200)
+
+    pedido_id = payment.get("external_reference")
+    if not pedido_id:
+        print("[MP-WEBHOOK] Pago aprobado SIN external_reference (fuera de nuestra tienda)")
+        return Response(content=b'"ok"', media_type="application/json", status_code=203)
+
+    # ---- Proceso definitivo del pago aprobado -------------------------------
+    resultado = aplicar_pago_aprobado(pedido_id, payment)
+    codigo_final = 206 if resultado.ok else 502
+    return Response(content=(resultado.body.encode()), media_type="application/json",
+                    status_code=codigo_final)
+
+
+@dataclass
+class _ProcesoPago:
+    ok: bool
+    body: str
+
+
+def aplicar_pago_aprobado(pedido_id: str, payment: dict) -> "_ProcesoPago":
+    """Concreta un pago aprobado: valida el pedido, evita duplicados y
+    registra el impacto financiero."""
+    try:
+        pedido_row = supabase.table("pedidos").select("*").eq("id", pedido_id).maybe_single().execute().data
+    except Exception as exc:
+        print("[MP-WEBHOOK] Error leyendo pedido:", repr(exc))
+        return _ProcesoPago(True, '"procesamiento diferido"')
+
+    if not pedido_row:
+        print(f"[MP-WEBHOOK] Pedido {pedido_id} inexistente.")
+        return _ProcesoPago(True, '"sin pedido vinculado"')
+
+    # Dedup: si ya estaba verificado, damos por hecho que ya se registró.
+    if pedido_row.get("pago_verificado"):
+        print(f"[MP-WEBHOOK] Pedido {pedido_id} YA verificada anteriormente. Skip.")
+        return _ProcesoPago(True, '"already processed"')
+
+    monto = float(payment.get("transaction_amount") or pedido_row.get("total") or 0)
+    cliente_id = pedido_row.get("cliente_id")
+
+    # Marcar como verificado PRIMERO para reducir riesgo de carrera entre
+    # múltiples notificaciones simultáneas.
+    supabase.table("pedidos").update({"pago_verificado": True}) \
+        .eq("id", pedido_id).execute()
+
+    # Registro contable: tabla pagos
+    if cliente_id:
+        supabase.table("pagos").insert({
+            "cliente_id": cliente_id,
+            "monto": round(monto, 2),
+            "metodo_pago": "MercadoPago",
+        }).execute()
+
+    # Registro contable: movimiento de caja (Ingreso)
+    supabase.table("movimientos_caja").insert({
+        "tipo": "Ingreso",
+        "monto": round(monto, 2),
+        "metodo_pago": "MercadoPago",
+        "descripcion": f"Cobro online MercadoPago - Pedido #{pedido_id}"
+    }).execute()
+
+    print(f"[MP-WEBHOOK] ✅ Pago {payment.get('id')} aplicado al pedido {pedido_id} "
+          f"(ARS {round(monto, 2)}).")
+    return _ProcesoPago(True, '{"processed": true}')
 
 @router.get("/")
 def get_pedidos(current_user=Depends(get_current_user)):

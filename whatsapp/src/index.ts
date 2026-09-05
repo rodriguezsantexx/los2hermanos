@@ -102,7 +102,7 @@ app.post('/api/simulate-message', async (req: any, res: any) => {
             let match;
             while ((match = photoRegex.exec(replyText)) !== null) {
                 const imgPath = match[1];
-                imagesToSend.push(`http://localhost:3000/flyers/${imgPath}.jpeg`);
+                imagesToSend.push(`${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`);
             }
             // Eliminar todas las etiquetas del texto
             replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
@@ -114,7 +114,7 @@ app.post('/api/simulate-message', async (req: any, res: any) => {
                     const pedidoData = JSON.parse(jsonStr);
                     pedidoData.telefono = telefono;
                     
-                    const backendRes = await fetch('http://127.0.0.1:8000/api/pedidos/bot', {
+                    const backendRes = await fetch(`${BACKEND_BASE_URL}/api/pedidos/bot`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(pedidoData)
@@ -257,6 +257,21 @@ const groq = new OpenAI({
 });
 
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free';
+
+// URL base del backend de Python (FastAPI). Por defecto apunta a la instancia
+// pública de Railway (producción). Para desarrollar en LOCAL, exportá
+// BACKEND_BASE_URL=http://127.0.0.1:8000 antes de levantar el bot.
+//
+// Importante: NO dependemos de NODE_ENV porque muchos PaaS (incl. Railway) no
+// garantizan setearlo a "production"; preferimos la URL estable por defecto y
+// permitir sobrescribirla explícitamente.
+const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL ||
+    'https://backend-production-af7b3.up.railway.app';
+
+// Origen público de los assets multimedia (flyers/imágenes de productos).
+// Sirven desde la carpeta /public/flyers de la WEB. Parametrizable por env.
+const FRONT_MEDIA_BASE_URL = process.env.FRONT_MEDIA_BASE_URL ||
+    'https://los2hermanos.up.railway.app';
 
 // Variable global para acceder al socket desde los eventos del sistema
 let globalSock: any = null;
@@ -608,7 +623,7 @@ async function connectToWhatsApp() {
                 let match;
                 while ((match = photoRegex.exec(replyText)) !== null) {
                     const imgPath = match[1];
-                    imagesToSend.push(`http://localhost:3000/flyers/${imgPath}.jpeg`);
+                    imagesToSend.push(`${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`);
                 }
                 replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
 
@@ -620,7 +635,7 @@ async function connectToWhatsApp() {
                         pedidoData.telefono = remoteJid.replace('@s.whatsapp.net', '');
                         
                         // Enviar al backend de Python
-                        const backendRes = await fetch('http://127.0.0.1:8000/api/pedidos/bot', {
+                        const backendRes = await fetch(`${BACKEND_BASE_URL}/api/pedidos/bot`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(pedidoData)

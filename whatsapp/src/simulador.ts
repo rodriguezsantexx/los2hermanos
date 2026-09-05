@@ -27,7 +27,11 @@ const prompt = () => {
         }
 
         try {
-            const response = await fetch('http://localhost:3005/api/simulate-message', {
+            // Utilitaria CLI de DEV: por defecto apunta al bot local. Permite
+            // apuntar a otra instancia con la env var BOT_SIMULATION_URL.
+            const simulationEndpoint = (process.env.BOT_SIMULATION_URL || 'http://localhost:3005') +
+                                        '/api/simulate-message';
+            const response = await fetch(simulationEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
