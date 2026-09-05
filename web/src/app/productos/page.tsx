@@ -405,8 +405,7 @@ function ProductosContent() {
       )}
 
       {/* Chips de categoría */}
-      <div className="sticky top-16 z-10 -mx-4 bg-background px-4 py-2 md:-mx-8 md:px-8">
-        <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+      <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
           {["Todos", ...CATEGORIAS].map((tab) => (
             <button
               key={tab}
@@ -418,7 +417,6 @@ function ProductosContent() {
               {tab === "Todos" ? "📋 Todos" : `${CATEGORIA_ICONO[tab] || ""} ${tab}`}
             </button>
           ))}
-        </div>
       </div>
 
       {loading ? (

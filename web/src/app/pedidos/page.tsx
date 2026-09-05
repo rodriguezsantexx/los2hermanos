@@ -332,8 +332,7 @@ function PedidosContent() {
         ))}
       </section>
 
-      <section className="sticky top-16 z-10 -mx-4 bg-background px-4 py-2 md:-mx-8 md:px-8">
-        <div className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+      <section className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
           {estados.map((estado) => (
             <button
               key={estado}
@@ -345,7 +344,6 @@ function PedidosContent() {
               {estado}
             </button>
           ))}
-        </div>
       </section>
 
       <section className="space-y-3">
