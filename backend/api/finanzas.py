@@ -1,5 +1,6 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from postgrest.exceptions import APIError
@@ -19,15 +20,23 @@ def json_money(value: Decimal) -> float:
     return float(value.quantize(Decimal("0.01")))
 
 
+# Zona horaria del negocio (Argentina). El "día" va de 00:00 a 00:00 hora local.
+ZONA_ARG = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+def hoy_arg() -> date:
+    return datetime.now(ZONA_ARG).date()
+
+
 def day_window(value: date | None) -> tuple[str, str]:
-    current = value or datetime.now(timezone.utc).date()
-    start = datetime.combine(current, time.min, tzinfo=timezone.utc)
+    current = value or hoy_arg()
+    start = datetime.combine(current, time.min, tzinfo=ZONA_ARG)
     return start.isoformat(), (start + timedelta(days=1)).isoformat()
 
 
 def month_window(mes_str: str | None) -> tuple[str, str]:
     # mes_str format: "YYYY-MM"
-    current = datetime.now(timezone.utc).date()
+    current = hoy_arg()
     if mes_str:
         try:
             year, month = map(int, mes_str.split("-"))
@@ -37,7 +46,7 @@ def month_window(mes_str: str | None) -> tuple[str, str]:
     else:
         current = date(current.year, current.month, 1)
         
-    start = datetime.combine(current, time.min, tzinfo=timezone.utc)
+    start = datetime.combine(current, time.min, tzinfo=ZONA_ARG)
     
     # Calculate next month
     if current.month == 12:
@@ -45,7 +54,7 @@ def month_window(mes_str: str | None) -> tuple[str, str]:
     else:
         next_month = date(current.year, current.month + 1, 1)
         
-    end = datetime.combine(next_month, time.min, tzinfo=timezone.utc)
+    end = datetime.combine(next_month, time.min, tzinfo=ZONA_ARG)
     return start.isoformat(), end.isoformat()
 
 
@@ -56,7 +65,7 @@ def caja_resumen(fecha: date | None = Query(default=None), current_user=Depends(
     ingresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Ingreso"), Decimal(0))
     egresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Egreso"), Decimal(0))
     return {
-        "fecha": (fecha or datetime.now(timezone.utc).date()).isoformat(),
+        "fecha": (fecha or hoy_arg()).isoformat(),
         "ingresos": json_money(ingresos),
         "egresos": json_money(egresos),
         "saldo": json_money(ingresos - egresos),
@@ -94,7 +103,7 @@ def caja_resumen_mensual(mes: str | None = Query(default=None), current_user=Dep
     ]
     
     return {
-        "mes": mes or datetime.now(timezone.utc).strftime("%Y-%m"),
+        "mes": mes or hoy_arg().strftime("%Y-%m"),
         "ingresos": json_money(ingresos),
         "egresos": json_money(egresos),
         "saldo": json_money(ingresos - egresos),
@@ -126,7 +135,7 @@ def efectivo_del_dia(inicio: str, fin: str) -> Decimal:
 @router.get("/caja/cierre")
 def get_cierre_caja(fecha: date | None = Query(default=None), current_user=Depends(admin_required)):
     inicio, fin = day_window(fecha)
-    fecha_str = (fecha or datetime.now(timezone.utc).date()).isoformat()
+    fecha_str = (fecha or hoy_arg()).isoformat()
     efectivo_esperado = efectivo_del_dia(inicio, fin)
     cierre = supabase.table("cierres_caja").select("*").eq("fecha", fecha_str).maybe_single().execute().data
     return {
@@ -198,7 +207,7 @@ def metricas_resumen(fecha: date | None = Query(default=None), current_user=Depe
             stock_bajo.append(item)
 
     return {
-        "fecha": (fecha or datetime.now(timezone.utc).date()).isoformat(),
+        "fecha": (fecha or hoy_arg()).isoformat(),
         "pedidos_total": len(pedidos),
         "pedidos_por_estado": estados,
         "ventas_total": json_money(ventas_total),

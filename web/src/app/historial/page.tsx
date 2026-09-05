@@ -39,10 +39,21 @@ const infoPago = (pago: string) => {
   }
 };
 
+// Zona horaria del negocio (Argentina). El "día" va de 00:00 a 00:00 hora local.
+const ZONA_ARG = "America/Argentina/Buenos_Aires";
+const aFechaLocal = (iso?: string) => {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_ARG, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+};
+const aMesLocal = (iso?: string) => {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_ARG, year: "numeric", month: "2-digit" }).format(new Date(iso));
+};
+
 export default function HistorialVentasPage() {
   const [modo, setModo] = useState<"dia" | "mes">("dia");
-  const [fechaStr, setFechaStr] = useState(new Date().toISOString().split("T")[0]);
-  const [mesStr, setMesStr] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [fechaStr, setFechaStr] = useState(() => aFechaLocal(new Date().toISOString()));
+  const [mesStr, setMesStr] = useState(() => aMesLocal(new Date().toISOString())); // YYYY-MM
   
   const [caja, setCaja] = useState<CajaResumen>({ ingresos: 0, egresos: 0, saldo: 0, movimientos: [] });
   const [cajaMensual, setCajaMensual] = useState<CajaMensual>({ mes: "", ingresos: 0, egresos: 0, saldo: 0, total_movimientos: 0, resumen_dias: [] });
@@ -66,11 +77,10 @@ export default function HistorialVentasPage() {
   // Cierre de caja: pedidos ENTREGADOS del día/mes seleccionado, agrupados por método
   const esDelPeriodo = (createdAt?: string) => {
     if (!createdAt) return false;
-    const d = new Date(createdAt);
     if (modo === "dia") {
-      return d.toISOString().split("T")[0] === fechaStr;
+      return aFechaLocal(createdAt) === fechaStr;
     }
-    return d.toISOString().slice(0, 7) === mesStr;
+    return aMesLocal(createdAt) === mesStr;
   };
   const entregados = pedidos.filter((p) => p.estado === "Entregado" && esDelPeriodo(p.created_at));
   const totalPorPago = (pago: string) =>
@@ -81,14 +91,17 @@ export default function HistorialVentasPage() {
     total: entregados.reduce((sum, p) => sum + Number(p.total || 0), 0),
   };
 
-  // Generar últimos 12 meses para el selector
+  // Generar últimos 12 meses para el selector (en hora argentina)
+  const hoyArg = new Date();
+  const anioArg = Number(new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_ARG, year: "numeric" }).format(hoyArg));
+  const mesArg = Number(new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_ARG, month: "2-digit" }).format(hoyArg));
   const mesesDisponibles = Array.from({length: 12}, (_, i) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
-    return { 
-      value: d.toISOString().slice(0, 7), 
-      label: d.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())
-    };
+    const total = anioArg * 12 + (mesArg - 1) - i;
+    const y = Math.floor(total / 12);
+    const m = (total % 12) + 1;
+    const value = `${y}-${String(m).padStart(2, "0")}`;
+    const label = new Date(y, m - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase());
+    return { value, label };
   });
 
   const cargarDatos = async () => {
@@ -228,7 +241,7 @@ export default function HistorialVentasPage() {
               {cierreInfo?.cierre ? (
                 <div className="text-right">
                   <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-bold ${cierreInfo.cierre.diferencia === 0 ? "bg-green-600 text-white" : cierreInfo.cierre.diferencia > 0 ? "bg-amber-500 text-white" : "bg-red-500 text-white"}`}>
-                    {cierreInfo.cierre.diferencia === 0 ? "✅ Caja cuadrada" : cierreInfo.cierre.diferencia > 0 ? `Sobran $${cierreInfo.cierre.diferencia.toLocaleString("es-AR")}` : `Faltan $${Math.abs(cierreInfo.cierre.diferencia).toLocaleString("es-AR")}`}
+                    {cierreInfo.cierre.diferencia === 0 ? "✅ Caja cerrada" : cierreInfo.cierre.diferencia > 0 ? `Sobran $${cierreInfo.cierre.diferencia.toLocaleString("es-AR")}` : `Faltan $${Math.abs(cierreInfo.cierre.diferencia).toLocaleString("es-AR")}`}
                   </span>
                   <p className="text-xs text-muted mt-1">Contado: ${cierreInfo.cierre.efectivo_contado.toLocaleString("es-AR")}</p>
                   <button onClick={() => setModalCierre(true)} className="mt-2 text-xs font-bold text-primary underline">Reabrir cierre</button>
