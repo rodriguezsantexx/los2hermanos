@@ -52,8 +52,6 @@ const infoPago = (pago: string) => {
   }
 };
 
-const parseTotal = (total: string) => Number(total.replace(/[^0-9.-]/g, "")) || 0;
-
 function PedidosContent() {
   const searchParams = useSearchParams();
   const [filtro, setFiltro] = useState("Todos");
@@ -79,18 +77,6 @@ function PedidosContent() {
   const total =
     detalles.reduce((sum, item) => sum + item.precio * item.cantidad, 0) +
     (productoSeleccionado?.precio || 0) * cantidad;
-
-  // Resumen de caja: totales por método de pago de los pedidos ENTREGADOS
-  const entregados = pedidos.filter((p) => p.estado === "Entregado");
-  const totalPorPago = (pago: string) =>
-    entregados.filter((p) => p.pago === pago).reduce((sum, p) => sum + parseTotal(p.total), 0);
-  const caja = {
-    Efectivo: totalPorPago("Efectivo"),
-    Transferencia: totalPorPago("Transferencia"),
-    MercadoPago: totalPorPago("MercadoPago"),
-    Fiado: totalPorPago("Fiado"),
-    total: entregados.reduce((sum, p) => sum + parseTotal(p.total), 0),
-  };
 
   useEffect(() => {
     try {
@@ -354,36 +340,6 @@ function PedidosContent() {
             </p>
           </div>
         ))}
-      </section>
-
-      {/* Resumen de caja (pedidos entregados) */}
-      <section className="card !p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-muted">Cierre de caja</h3>
-          <span className="text-xs text-muted">{entregados.length} entregados</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-xl bg-emerald-50 p-3">
-            <p className="text-xs font-bold text-emerald-700">💵 Efectivo</p>
-            <p className="mt-1 text-lg font-black text-gray-900">${caja.Efectivo.toLocaleString("es-AR")}</p>
-          </div>
-          <div className="rounded-xl bg-blue-50 p-3">
-            <p className="text-xs font-bold text-blue-700">🏦 Transferencia</p>
-            <p className="mt-1 text-lg font-black text-gray-900">${caja.Transferencia.toLocaleString("es-AR")}</p>
-          </div>
-          <div className="rounded-xl bg-sky-50 p-3">
-            <p className="text-xs font-bold text-sky-700">📱 MercadoPago</p>
-            <p className="mt-1 text-lg font-black text-gray-900">${caja.MercadoPago.toLocaleString("es-AR")}</p>
-          </div>
-          <div className="rounded-xl bg-amber-50 p-3">
-            <p className="text-xs font-bold text-amber-700">📒 Fiado</p>
-            <p className="mt-1 text-lg font-black text-gray-900">${caja.Fiado.toLocaleString("es-AR")}</p>
-          </div>
-        </div>
-        <div className="mt-3 flex items-center justify-between rounded-xl bg-gray-900 px-4 py-3">
-          <span className="text-sm font-bold text-gray-300">Total caja</span>
-          <span className="text-xl font-black text-white">${caja.total.toLocaleString("es-AR")}</span>
-        </div>
       </section>
 
       <section className="flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">

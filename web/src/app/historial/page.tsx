@@ -8,6 +8,37 @@ type CajaResumen = { ingresos: number; egresos: number; saldo: number; movimient
 type ResumenDia = { fecha: string; ingresos: number; egresos: number; saldo: number };
 type CajaMensual = { mes: string; ingresos: number; egresos: number; saldo: number; total_movimientos: number; resumen_dias: ResumenDia[] };
 
+type ApiPedido = {
+  id: string;
+  total: number;
+  estado: string;
+  metodo_pago?: string;
+  pago_verificado?: boolean;
+  created_at?: string;
+  clientes?: { nombre?: string } | null;
+  localidades?: { nombre?: string } | null;
+  detalle_pedidos?: { cantidad: number; productos?: { nombre?: string } | null }[];
+};
+
+// Normaliza el método de pago: Transferencia y MercadoPago se cuentan como "Digital"
+const normalizarPago = (pago?: string) => {
+  if (!pago) return "A confirmar";
+  const p = pago.toLowerCase();
+  if (p.includes("transferencia") || p.includes("mercado") || p.includes("digital")) return "Digital";
+  if (p.includes("efectivo")) return "Efectivo";
+  if (p.includes("fiado")) return "Fiado";
+  return pago;
+};
+
+const infoPago = (pago: string) => {
+  switch (pago) {
+    case "Efectivo": return { icono: "💵", clase: "bg-emerald-50 text-emerald-700" };
+    case "Digital": return { icono: "📲", clase: "bg-blue-50 text-blue-700" };
+    case "Fiado": return { icono: "📒", clase: "bg-amber-50 text-amber-700" };
+    default: return { icono: "⏳", clase: "bg-gray-50 text-gray-600" };
+  }
+};
+
 export default function HistorialVentasPage() {
   const [modo, setModo] = useState<"dia" | "mes">("dia");
   const [fechaStr, setFechaStr] = useState(new Date().toISOString().split("T")[0]);
@@ -21,6 +52,28 @@ export default function HistorialVentasPage() {
 
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [expandedDayMovements, setExpandedDayMovements] = useState<Movimiento[]>([]);
+
+  // Pedidos para el cierre de caja (ventas por método de pago)
+  const [pedidos, setPedidos] = useState<ApiPedido[]>([]);
+
+  // Cierre de caja: pedidos ENTREGADOS del día/mes seleccionado, agrupados por método
+  const esDelPeriodo = (createdAt?: string) => {
+    if (!createdAt) return false;
+    const d = new Date(createdAt);
+    if (modo === "dia") {
+      return d.toISOString().split("T")[0] === fechaStr;
+    }
+    return d.toISOString().slice(0, 7) === mesStr;
+  };
+  const entregados = pedidos.filter((p) => p.estado === "Entregado" && esDelPeriodo(p.created_at));
+  const totalPorPago = (pago: string) =>
+    entregados.filter((p) => normalizarPago(p.metodo_pago) === pago).reduce((sum, p) => sum + Number(p.total || 0), 0);
+  const cierre = {
+    Efectivo: totalPorPago("Efectivo"),
+    Digital: totalPorPago("Digital"),
+    Fiado: totalPorPago("Fiado"),
+    total: entregados.reduce((sum, p) => sum + Number(p.total || 0), 0),
+  };
 
   // Generar últimos 12 meses para el selector
   const mesesDisponibles = Array.from({length: 12}, (_, i) => {
@@ -50,6 +103,12 @@ export default function HistorialVentasPage() {
   useEffect(() => { 
     cargarDatos();
   }, [fechaStr, mesStr, modo]);
+
+  useEffect(() => {
+    apiFetch<ApiPedido[]>("/api/pedidos")
+      .then(setPedidos)
+      .catch(() => setPedidos([]));
+  }, []);
 
   const guardarMovimiento = async (event: FormEvent) => {
     event.preventDefault();
@@ -101,6 +160,34 @@ export default function HistorialVentasPage() {
           <p className="text-muted font-medium text-sm tracking-wider">EGRESOS (CAJA)</p>
           <p className="text-3xl md:text-4xl font-black text-red-600 mt-2">-${(modo === "dia" ? caja.egresos : cajaMensual.egresos).toLocaleString("es-AR")}</p>
         </div>
+      </section>
+
+      {/* Cierre de caja: ventas entregadas por método de pago */}
+      <section className="card !p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-bold uppercase tracking-wider text-muted">Cierre de caja</h3>
+          <span className="text-xs text-muted">{entregados.length} entregados {modo === "dia" ? "hoy" : "en el mes"}</span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            { pago: "Efectivo", monto: cierre.Efectivo },
+            { pago: "Digital", monto: cierre.Digital },
+            { pago: "Fiado", monto: cierre.Fiado },
+          ].map(({ pago, monto }) => {
+            const info = infoPago(pago);
+            return (
+              <div key={pago} className={`rounded-xl p-3 ${info.clase}`}>
+                <p className="text-xs font-bold">{info.icono} {pago}</p>
+                <p className="mt-1 text-lg font-black text-gray-900">${monto.toLocaleString("es-AR")}</p>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-3 flex items-center justify-between rounded-xl bg-gray-900 px-4 py-3">
+          <span className="text-sm font-bold text-gray-300">Total ventas entregadas</span>
+          <span className="text-xl font-black text-white">${cierre.total.toLocaleString("es-AR")}</span>
+        </div>
+        <p className="mt-2 text-xs text-muted">📲 Digital = Transferencia + MercadoPago</p>
       </section>
 
       {/* Sección de Movimientos / Reporte */}
