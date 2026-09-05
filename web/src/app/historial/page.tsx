@@ -187,7 +187,6 @@ export default function HistorialVentasPage() {
           <span className="text-sm font-bold text-gray-300">Total ventas entregadas</span>
           <span className="text-xl font-black text-white">${cierre.total.toLocaleString("es-AR")}</span>
         </div>
-        <p className="mt-2 text-xs text-muted">📲 Digital = Transferencia + MercadoPago</p>
       </section>
 
       {/* Sección de Movimientos / Reporte */}
