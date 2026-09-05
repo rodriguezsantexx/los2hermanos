@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import LogoutButton from '@/components/auth/LogoutButton';
+import AccountSwitcher from '@/components/auth/AccountSwitcher';
 import { useNotifications } from '@/context/NotificationContext';
+import { getUser } from '@/lib/session';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -14,7 +16,7 @@ export default function Sidebar() {
   const [userHomePath, setUserHomePath] = useState("/dashboard");
   useEffect(() => {
     try {
-      const user = JSON.parse(localStorage.getItem("los2hermanos_user") || "null");
+      const user = getUser();
       const role = user?.roles?.nombre;
       setIsAdmin(role === "ADMIN");
       setUserHomePath(role === "CHOFER_HUERTA_GRANDE" ? "/chofer/huerta-grande" : role === "CHOFER_LA_FALDA" ? "/chofer/la-falda" : "/dashboard");
@@ -58,15 +60,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-gray-100">
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50">
-          <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-gray-900 font-bold shadow-sm">
-            AD
-          </div>
-          <div>
-            <p className="font-bold text-sm text-gray-900">Administrador</p>
-            <p className="text-xs text-muted">admin@sistema</p>
-          </div>
-        </div>
+        <AccountSwitcher />
         <LogoutButton />
       </div>
     </aside>

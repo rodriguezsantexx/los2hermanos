@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
+import { getUser } from "@/lib/session";
 
 type Role = "ADMIN" | "CHOFER_LA_FALDA" | "CHOFER_HUERTA_GRANDE";
 
@@ -18,7 +19,7 @@ export default function RoleGuard({ allowedRole, children }: { allowedRole: Role
 
   useEffect(() => {
     try {
-      const user = JSON.parse(localStorage.getItem("los2hermanos_user") || "null");
+      const user = getUser();
       const role = user?.roles?.nombre as Role | undefined;
       if (!role) {
         router.replace("/login");

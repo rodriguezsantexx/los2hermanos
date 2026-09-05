@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { getToken } from '@/lib/session';
 
 export default function WhatsappChat() {
   const [chats, setChats] = useState<any[]>([]);
@@ -95,7 +96,7 @@ export default function WhatsappChat() {
       let localidadId = pedidoExtraido.localidad_id || localidades[0]?.id; // Default si falla
       
       const clientesRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes`, {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }
+        headers: { "Authorization": `Bearer ${getToken()}` }
       });
       const clientes = await clientesRes.json();
       
@@ -110,7 +111,7 @@ export default function WhatsappChat() {
         mostrarNotificacion("👤 Registrando nuevo cliente...");
         const nuevoClienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` },
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
           body: JSON.stringify({
             nombre: selectedChat.nombre_contacto || "Cliente WhatsApp",
             telefono: selectedChat.telefono,
@@ -138,7 +139,7 @@ export default function WhatsappChat() {
 
       const pedidoRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
         body: JSON.stringify(payloadPedido)
       });
       

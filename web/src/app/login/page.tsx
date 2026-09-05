@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { saveSession } from "@/lib/session";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,8 +23,12 @@ export default function LoginPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Credenciales incorrectas");
-      localStorage.setItem("los2hermanos_access_token", data.access_token);
-      localStorage.setItem("los2hermanos_user", JSON.stringify(data.profile || data.user));
+      // Guarda la cuenta en el pool y la deja activa en esta pestaña.
+      const profile = data.profile || data.user;
+      saveSession(profile?.nombre || username.trim(), {
+        access_token: data.access_token,
+        user: profile,
+      });
       const role = data.profile?.roles?.nombre;
       router.push(role === "CHOFER_LA_FALDA" ? "/chofer/la-falda" : role === "CHOFER_HUERTA_GRANDE" ? "/chofer/huerta-grande" : "/dashboard");
     } catch (err) {

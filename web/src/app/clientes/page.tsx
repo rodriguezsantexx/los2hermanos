@@ -5,6 +5,7 @@ import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import ReactMarkdown from 'react-markdown';
 import { useNotifications } from '@/context/NotificationContext';
+import { getToken } from '@/lib/session';
 
 type Localidad = { id: string; nombre: string };
 type Producto = { id: string; nombre: string; precio: number };
@@ -160,7 +161,7 @@ export default function ClientesPage() {
 
   const crearCliente = async (event: React.FormEvent) => {
     event.preventDefault();
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify(clienteForm) });
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` }, body: JSON.stringify(clienteForm) });
     if (!res.ok) { const data = await res.json(); alert(data.detail || "No se pudo crear el cliente"); return; }
     setClienteForm({ nombre: "", telefono: "", direccion: "", localidad_id: localidades[0]?.id || "" });
     setClienteModal(false);
@@ -175,7 +176,7 @@ export default function ClientesPage() {
       // 1. Asegurar que el cliente existe
       let cliente_id = "";
       const clienteData = { nombre: pedidoForm.nombre, telefono: pedidoForm.telefono, direccion: pedidoForm.direccion, localidad_id: pedidoForm.localidad_id };
-      const clienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify(clienteData) });
+      const clienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` }, body: JSON.stringify(clienteData) });
       if (clienteRes.ok) {
         const c = await clienteRes.json();
         cliente_id = c.id;
@@ -191,7 +192,7 @@ export default function ClientesPage() {
       }
 
       // 2. Crear Pedido
-      const token = localStorage.getItem("los2hermanos_access_token");
+      const token = getToken();
       const pedidoPayload = {
         cliente_id,
         localidad_id: pedidoForm.localidad_id,

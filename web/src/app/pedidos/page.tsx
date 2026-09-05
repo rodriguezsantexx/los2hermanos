@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { getToken, getUser } from "@/lib/session";
 
 type Producto = { id: string; nombre: string; precio: number; stock_actual: number };
 type Detalle = { producto: string; cantidad: number; precio: number };
@@ -35,7 +36,7 @@ function PedidosContent() {
 
   useEffect(() => {
     try {
-      const user = JSON.parse(localStorage.getItem("los2hermanos_user") || "null");
+      const user = getUser();
       setPuedeCrear(user?.roles?.nombre === "ADMIN");
     } catch {
       setPuedeCrear(false);
@@ -44,7 +45,7 @@ function PedidosContent() {
     const fetchPedidos = () => {
       fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos`, {
         headers: {
-          "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}`
+          "Authorization": `Bearer ${getToken()}`
         }
       })
       .then(res => res.ok ? res.json() : [])
@@ -147,7 +148,7 @@ function PedidosContent() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}`
+          "Authorization": `Bearer ${getToken()}`
         },
         body: JSON.stringify(payload)
       });
@@ -207,7 +208,7 @@ function PedidosContent() {
         <div className="flex gap-2 overflow-x-auto border-b border-gray-100 p-4">{estados.map(estado => <button key={estado} onClick={() => setFiltro(estado)} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold transition-colors ${filtro === estado ? "bg-primary text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{estado}</button>)}</div>
         <div className="overflow-x-auto"><table className="w-full min-w-[700px] text-left"><thead><tr className="border-b border-gray-100 bg-gray-50 text-xs tracking-wider text-gray-500"><th className="p-4">PEDIDO</th><th className="p-4">CLIENTE</th><th className="p-4">DIRECCIÓN</th><th className="p-4">LOCALIDAD</th>{puedeCrear && <th className="p-4">TIPO</th>}<th className="p-4">TOTAL</th><th className="p-4">ESTADO</th><th className="p-4">PAGO</th></tr></thead><tbody className="divide-y divide-gray-100">{pedidosFiltrados.map(pedido => <Fragment key={pedido.uuid}><tr onClick={() => setPedidoAbierto(pedidoAbierto === pedido.uuid ? null : pedido.uuid)} className={`cursor-pointer transition-colors ${pedidoAbierto === pedido.uuid ? "bg-blue-50/50" : "hover:bg-gray-50"}`}><td className="p-4 font-bold text-primary">{pedidoAbierto === pedido.uuid ? "⌄" : "›"} {pedido.id}</td><td className="p-4 font-bold text-gray-900">{pedido.cliente}</td><td className="p-4 text-gray-600">{pedido.tipo === "Local" ? "-" : pedido.direccion}</td><td className="p-4 text-gray-600">{pedido.tipo === "Local" ? "-" : pedido.localidad}</td>{puedeCrear && <td className="p-4 text-gray-600 font-medium">{pedido.tipo}</td>}<td className="p-4 font-bold text-gray-900">{pedido.total}</td><td className="p-4"><span className={pedido.estado === "Entregado" ? "badge-success" : pedido.estado === "Pendiente" ? "badge-warning" : "badge-success"}>{pedido.estado}</span></td><td className="p-4 text-gray-600 flex items-center gap-1">{pedido.pago} {(pedido.pago === "Transferencia" || pedido.pago === "MercadoPago") && (pedido.pago_verificado ? <span className="text-green-500 text-xs font-bold bg-green-100 px-1.5 py-0.5 rounded ml-1" title="Pago Verificado">✔ Verificado</span> : <span className="text-yellow-500 text-xs font-bold bg-yellow-100 px-1.5 py-0.5 rounded ml-1" title="Pendiente de pago">⏳ Pend.</span>)}</td></tr>{pedidoAbierto === pedido.uuid && <tr><td colSpan={puedeCrear ? 8 : 7} className="bg-blue-50/50 px-8 py-4"><p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-500">Detalle del pedido</p><div className="space-y-2">{pedido.detalles.map((detalle: any, index: number) => <div key={index} className="flex justify-between text-sm"><span>{detalle.cantidad} × {detalle.producto}</span><span className="font-bold">${(detalle.precio * detalle.cantidad).toLocaleString("es-AR")}</span></div>)}</div>
           {pedido.estado !== "Entregado" && puedeCrear && (
-            <button onClick={(e) => { e.stopPropagation(); fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos/${pedido.uuid}/entregar`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("los2hermanos_access_token")}` }, body: JSON.stringify({ estado: "Entregado", metodo_pago: pedido.pago }) }).then(() => { if (typeof (window as any).refreshPedidos === "function") (window as any).refreshPedidos(); }); }} className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white shadow hover:bg-primary/90 transition-colors">✔ Marcar como Entregado</button>
+            <button onClick={(e) => { e.stopPropagation(); fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos/${pedido.uuid}/entregar`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` }, body: JSON.stringify({ estado: "Entregado", metodo_pago: pedido.pago }) }).then(() => { if (typeof (window as any).refreshPedidos === "function") (window as any).refreshPedidos(); }); }} className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white shadow hover:bg-primary/90 transition-colors">✔ Marcar como Entregado</button>
           )}
         </td></tr>}</Fragment>)}</tbody></table></div>
         {pedidosFiltrados.length === 0 && <p className="p-8 text-center text-muted">No hay pedidos en este estado.</p>}

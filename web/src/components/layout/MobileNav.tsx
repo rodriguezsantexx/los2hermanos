@@ -4,6 +4,8 @@ import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useNotifications } from '@/context/NotificationContext';
+import AccountSwitcher from '@/components/auth/AccountSwitcher';
+import { getUser, logoutActive } from '@/lib/session';
 
 export default function MobileNav() {
   const pathname = usePathname();
@@ -16,7 +18,7 @@ export default function MobileNav() {
 
   useEffect(() => {
     try {
-      const user = JSON.parse(localStorage.getItem("los2hermanos_user") || "null");
+      const user = getUser();
       const role = user?.roles?.nombre;
       setIsAdmin(role === "ADMIN");
       setUserHomePath(role === "CHOFER_HUERTA_GRANDE" ? "/chofer/huerta-grande" : role === "CHOFER_LA_FALDA" ? "/chofer/la-falda" : "/dashboard");
@@ -67,7 +69,8 @@ export default function MobileNav() {
                 <span className="text-[10px] font-bold leading-tight">{item.name}</span>
               </Link>
             ))}
-            <button type="button" onClick={() => { localStorage.removeItem("los2hermanos_access_token"); localStorage.removeItem("los2hermanos_user"); router.replace("/login"); }} className="flex w-[62px] flex-col items-center gap-1 text-center text-red-600"><span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl shadow-sm">↪</span><span className="text-[10px] font-bold leading-tight">Salir</span></button>
+            <AccountSwitcher variant="inline" />
+            <button type="button" onClick={() => { logoutActive(); router.replace("/login"); }} className="flex w-[62px] flex-col items-center gap-1 text-center text-red-600"><span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl shadow-sm">↪</span><span className="text-[10px] font-bold leading-tight">Salir</span></button>
           </div>
         </>
       )}

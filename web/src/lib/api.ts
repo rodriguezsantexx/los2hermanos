@@ -1,7 +1,9 @@
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`;
 
+import { getToken } from "@/lib/session";
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = typeof window === "undefined" ? null : localStorage.getItem("los2hermanos_access_token");
+  const token = typeof window === "undefined" ? null : getToken();
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
