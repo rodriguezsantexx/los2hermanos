@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { getToken, getUser } from "@/lib/session";
+import { getToken, getUser, logoutActive } from "@/lib/session";
 
 type Producto = { id: string; nombre: string; precio: number; stock_actual: number };
 type Detalle = { producto: string; cantidad: number; precio: number };
@@ -80,7 +80,14 @@ function PedidosContent() {
       fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       })
-        .then((res) => (res.ok ? res.json() : []))
+        .then((res) => {
+          if (res.status === 401) {
+            logoutActive();
+            if (window.location.pathname !== "/login") window.location.href = "/login";
+            return [];
+          }
+          return res.ok ? res.json() : [];
+        })
         .then((data) => {
           if (Array.isArray(data)) {
             const pedidosFormateados: PedidoUI[] = data.map((p) => ({
