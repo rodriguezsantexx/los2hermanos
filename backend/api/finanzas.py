@@ -6,7 +6,7 @@ from postgrest.exceptions import APIError
 
 from auth.dependencies import admin_required
 from database.connection import supabase
-from schemas.finanzas import MovimientoCajaCreate, PagoCreate
+from schemas.finanzas import CierreCajaCreate, MovimientoCajaCreate, PagoCreate
 
 router = APIRouter()
 
@@ -110,6 +110,47 @@ def crear_movimiento_caja(movimiento: MovimientoCajaCreate, current_user=Depends
         data = movimiento.model_dump(mode="json")
         data["usuario_id"] = current_user["id"]
         result = supabase.table("movimientos_caja").insert(data).execute()
+        return result.data[0]
+    except APIError as error:
+        raise HTTPException(status_code=400, detail=error.message)
+
+
+def efectivo_del_dia(inicio: str, fin: str) -> Decimal:
+    """Efectivo esperado en caja = ingresos en efectivo - egresos en efectivo del período."""
+    movimientos = supabase.table("movimientos_caja").select("tipo, monto, metodo_pago").gte("fecha", inicio).lt("fecha", fin).execute().data or []
+    ingresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Ingreso" and item["metodo_pago"] == "Efectivo"), Decimal(0))
+    egresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Egreso" and item["metodo_pago"] == "Efectivo"), Decimal(0))
+    return ingresos - egresos
+
+
+@router.get("/caja/cierre")
+def get_cierre_caja(fecha: date | None = Query(default=None), current_user=Depends(admin_required)):
+    inicio, fin = day_window(fecha)
+    fecha_str = (fecha or datetime.now(timezone.utc).date()).isoformat()
+    efectivo_esperado = efectivo_del_dia(inicio, fin)
+    cierre = supabase.table("cierres_caja").select("*").eq("fecha", fecha_str).maybe_single().execute().data
+    return {
+        "fecha": fecha_str,
+        "efectivo_esperado": json_money(efectivo_esperado),
+        "cierre": cierre,
+    }
+
+
+@router.post("/caja/cierre")
+def guardar_cierre_caja(payload: CierreCajaCreate, current_user=Depends(admin_required)):
+    inicio, fin = day_window(payload.fecha)
+    efectivo_esperado = efectivo_del_dia(inicio, fin)
+    diferencia = payload.efectivo_contado - efectivo_esperado
+    data = {
+        "fecha": payload.fecha.isoformat(),
+        "efectivo_esperado": json_money(efectivo_esperado),
+        "efectivo_contado": json_money(payload.efectivo_contado),
+        "diferencia": json_money(diferencia),
+        "usuario_id": current_user["id"],
+        "observaciones": payload.observaciones,
+    }
+    try:
+        result = supabase.table("cierres_caja").upsert(data, on_conflict="fecha").execute()
         return result.data[0]
     except APIError as error:
         raise HTTPException(status_code=400, detail=error.message)

@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -15,3 +16,9 @@ class MovimientoCajaCreate(BaseModel):
     monto: Decimal = Field(gt=0)
     metodo_pago: str = Field(min_length=2, max_length=50)
     descripcion: Optional[str] = None
+
+
+class CierreCajaCreate(BaseModel):
+    fecha: date
+    efectivo_contado: Decimal = Field(ge=0)
+    observaciones: Optional[str] = None

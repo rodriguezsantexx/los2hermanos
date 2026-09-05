@@ -7,6 +7,8 @@ type Movimiento = { id: string; tipo: "Ingreso" | "Egreso"; monto: number; metod
 type CajaResumen = { ingresos: number; egresos: number; saldo: number; movimientos: Movimiento[] };
 type ResumenDia = { fecha: string; ingresos: number; egresos: number; saldo: number };
 type CajaMensual = { mes: string; ingresos: number; egresos: number; saldo: number; total_movimientos: number; resumen_dias: ResumenDia[] };
+type CierreCaja = { id: string; fecha: string; efectivo_esperado: number; efectivo_contado: number; diferencia: number; observaciones?: string; usuarios?: { nombre: string } };
+type CierreInfo = { fecha: string; efectivo_esperado: number; cierre: CierreCaja | null };
 
 type ApiPedido = {
   id: string;
@@ -50,6 +52,13 @@ export default function HistorialVentasPage() {
 
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [expandedDayMovements, setExpandedDayMovements] = useState<Movimiento[]>([]);
+
+  // Cierre de caja: verificación del efectivo físico
+  const [cierreInfo, setCierreInfo] = useState<CierreInfo | null>(null);
+  const [modalCierre, setModalCierre] = useState(false);
+  const [efectivoContado, setEfectivoContado] = useState("");
+  const [observaciones, setObservaciones] = useState("");
+  const [guardandoCierre, setGuardandoCierre] = useState(false);
 
   // Pedidos para el cierre de caja (ventas por método de pago)
   const [pedidos, setPedidos] = useState<ApiPedido[]>([]);
@@ -115,6 +124,30 @@ export default function HistorialVentasPage() {
       setForm({ tipo: "Ingreso", monto: "", metodo_pago: "Efectivo", descripcion: "" });
       await cargarDatos();
     } catch (err) { setErrorCaja(err instanceof Error ? err.message : "No se pudo registrar el movimiento"); }
+  };
+
+  const cargarCierre = async () => {
+    if (modo !== "dia") { setCierreInfo(null); return; }
+    try {
+      const data = await apiFetch<CierreInfo>(`/api/finanzas/caja/cierre?fecha=${fechaStr}`);
+      setCierreInfo(data);
+    } catch { setCierreInfo(null); }
+  };
+
+  useEffect(() => { cargarCierre(); }, [fechaStr, modo]);
+
+  const guardarCierre = async (event: FormEvent) => {
+    event.preventDefault();
+    setGuardandoCierre(true);
+    setErrorCaja("");
+    try {
+      const data = await apiFetch<CierreCaja>("/api/finanzas/caja/cierre", { method: "POST", body: JSON.stringify({ fecha: fechaStr, efectivo_contado: Number(efectivoContado), observaciones: observaciones || null }) });
+      setCierreInfo({ fecha: fechaStr, efectivo_esperado: data.efectivo_esperado, cierre: data });
+      setModalCierre(false);
+      setEfectivoContado("");
+      setObservaciones("");
+    } catch (err) { setErrorCaja(err instanceof Error ? err.message : "No se pudo guardar el cierre"); }
+    setGuardandoCierre(false);
   };
 
   return (
@@ -183,6 +216,29 @@ export default function HistorialVentasPage() {
           <span className="text-sm font-bold text-gray-300">Total ventas entregadas</span>
           <span className="text-xl font-black text-white">${cierre.total.toLocaleString("es-AR")}</span>
         </div>
+
+        {modo === "dia" && (
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">💰 Efectivo a contar</p>
+                <p className="mt-1 text-2xl font-black text-gray-900">${(cierreInfo?.efectivo_esperado ?? 0).toLocaleString("es-AR")}</p>
+                <p className="text-xs text-emerald-700/70 mt-0.5">Ingresos en efectivo − gastos en efectivo del día</p>
+              </div>
+              {cierreInfo?.cierre ? (
+                <div className="text-right">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-bold ${cierreInfo.cierre.diferencia === 0 ? "bg-green-600 text-white" : cierreInfo.cierre.diferencia > 0 ? "bg-amber-500 text-white" : "bg-red-500 text-white"}`}>
+                    {cierreInfo.cierre.diferencia === 0 ? "✅ Caja cuadrada" : cierreInfo.cierre.diferencia > 0 ? `Sobran $${cierreInfo.cierre.diferencia.toLocaleString("es-AR")}` : `Faltan $${Math.abs(cierreInfo.cierre.diferencia).toLocaleString("es-AR")}`}
+                  </span>
+                  <p className="text-xs text-muted mt-1">Contado: ${cierreInfo.cierre.efectivo_contado.toLocaleString("es-AR")}</p>
+                  <button onClick={() => setModalCierre(true)} className="mt-2 text-xs font-bold text-primary underline">Reabrir cierre</button>
+                </div>
+              ) : (
+                <button onClick={() => setModalCierre(true)} className="btn-primary shadow-primary/30">Cerrar caja</button>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Sección de Movimientos / Reporte */}
@@ -336,6 +392,34 @@ export default function HistorialVentasPage() {
           </div>
         </div>
       </section>
+
+      {modalCierre && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form onSubmit={guardarCierre} className="card w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold">Cerrar caja</h3>
+              <button type="button" onClick={() => setModalCierre(false)} className="text-2xl text-gray-400 hover:text-gray-600">×</button>
+            </div>
+            <p className="text-sm text-muted">Cierre del {new Date(fechaStr + "T12:00:00").toLocaleDateString('es-AR')}</p>
+            <div className="rounded-xl bg-emerald-50 p-4 text-center">
+              <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Efectivo esperado</p>
+              <p className="text-3xl font-black text-gray-900">${(cierreInfo?.efectivo_esperado ?? 0).toLocaleString("es-AR")}</p>
+            </div>
+            <label className="block text-sm font-bold text-gray-700">
+              Efectivo contado
+              <input required type="number" min="0" step="0.01" placeholder="0.00" value={efectivoContado} onChange={e => setEfectivoContado(e.target.value)} className="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3" autoFocus />
+            </label>
+            <label className="block text-sm font-bold text-gray-700">
+              Observaciones (opcional)
+              <input value={observaciones} onChange={e => setObservaciones(e.target.value)} placeholder="Ej: faltó vuelto, sobró de un pago..." className="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 p-3" />
+            </label>
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={() => setModalCierre(false)} className="flex-1 rounded-xl bg-gray-100 px-4 py-3 font-bold text-gray-600">Cancelar</button>
+              <button type="submit" disabled={guardandoCierre} className="btn-primary flex-1 disabled:opacity-50 shadow-primary/30">{guardandoCierre ? "Guardando..." : "Confirmar cierre"}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   );
 }
