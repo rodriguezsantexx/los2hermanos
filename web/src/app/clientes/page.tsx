@@ -297,7 +297,9 @@ export default function ClientesPage() {
           .catch(() => undefined);
       }, 2500);
     } catch (e: any) {
-      alert(e.message || "No se pudo solicitar el código de vinculación.");
+      alert(e?.message?.includes("Failed to fetch")
+        ? "No se pudo conectar con el bot de WhatsApp. Verificá que esté corriendo y volvé a intentar."
+        : (e.message || "No se pudo solicitar el código de vinculación."));
     } finally {
       setPairingLoading(false);
     }
@@ -333,7 +335,7 @@ export default function ClientesPage() {
               {pairingCode ? (
                 <div className="text-center">
                   <div className="text-3xl font-black tracking-widest text-amber-900 px-2">
-                    {pairingCode.replace(/(\d{4})/, '$1-')}
+                    {pairingCode.length === 8 ? `${pairingCode.slice(0,4)}-${pairingCode.slice(4)}` : pairingCode}
                   </div>
                   <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-600">Código de vinculación</p>
                 </div>
@@ -370,7 +372,7 @@ export default function ClientesPage() {
                   <li>En tu celular abrí <b>WhatsApp</b>.</li>
                   <li>Andá a <b>Dispositivos vinculados</b> → <b>Vincular un dispositivo</b>.</li>
                   <li>Tocá <b>Vincular con número de teléfono</b> (en vez de escanear el QR).</li>
-                  <li>Ingresá el código <b className="text-amber-900">{pairingCode.replace(/(\d{4})/, '$1-')}</b>.</li>
+                  <li>Ingresá el código <b className="text-amber-900">{pairingCode.length === 8 ? `${pairingCode.slice(0,4)}-${pairingCode.slice(4)}` : pairingCode}</b>.</li>
                 </ol>
               )}
             </div>
