@@ -185,10 +185,15 @@ app.post('/api/pair', async (req: any, res: any) => {
         currentPairingCode = '';
         currentQR = '';
 
-        // Si todavia estamos desconectados/disponibles, reconectamos ahora
-        if (botStatus === 'disconnected') {
-            connectToWhatsApp();
+        // Reiniciamos la conexión SIEMPRE (aunque el socket esté en estado 'qr'),
+        // para que el nuevo socket pida el pairing code durante su fase de QR.
+        if (globalSock) {
+            try {
+                globalSock.ev.removeAllListeners();
+                globalSock.end(undefined);
+            } catch(e) {}
         }
+        setTimeout(() => connectToWhatsApp(), 500);
 
         return res.json({ success: true, message: 'Vinculación por código iniciada.' });
     } catch (err) {
@@ -519,31 +524,36 @@ async function connectToWhatsApp() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Si tenemos un número pendiente y aún no está registrado, generamos un
-    // PAIRING CODE (numérico) en lugar del QR. Así se puede vincular desde el
-    // MISMO celular donde corre la app, algo imposible con el QR tradicional.
-    if (!state.creds.registered && pendingPairingNumber) {
-        try {
-            console.log('[PAIRING] Solicitando código de emparejamiento...');
-            const code = await sock.requestPairingCode(pendingPairingNumber);
-            currentPairingCode = code ?? '';
-            botStatus = 'paired';
-            console.log('[PAIRING] Código generado:', currentPairingCode);
-        } catch (err: any) {
-            console.error('[PAIRING] Error al obtener pairing code:', err?.message || err);
-            currentPairingCode = '';
-            botStatus = 'disconnected';
-        }
-    }
+    // Bandera para pedir el pairing code UNA sola vez por conexión
+    let pairingRequested = false;
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log('\n--- Escanea este QR con tu WhatsApp ---');
-            qrcode.generate(qr, { small: true });
-            botStatus = 'qr';
-            currentQR = qr;
+            // El socket ya está listo (WS abierto). Si hay un número pendiente,
+            // pedimos el PAIRING CODE en lugar de mostrar el QR. Pedirlo antes
+            // de este punto falla porque el socket aún no puede enviar nodos.
+            if (pendingPairingNumber && !state.creds.registered && !pairingRequested) {
+                pairingRequested = true;
+                console.log('[PAIRING] Solicitando código de emparejamiento para:', pendingPairingNumber);
+                sock.requestPairingCode(pendingPairingNumber)
+                    .then((code: string) => {
+                        currentPairingCode = code ?? '';
+                        botStatus = 'paired';
+                        console.log('[PAIRING] Código generado:', currentPairingCode);
+                    })
+                    .catch((err: any) => {
+                        console.error('[PAIRING] Error al obtener pairing code:', err?.message || err);
+                        currentPairingCode = '';
+                        botStatus = 'disconnected';
+                    });
+            } else {
+                console.log('\n--- Escanea este QR con tu WhatsApp ---');
+                qrcode.generate(qr, { small: true });
+                botStatus = 'qr';
+                currentQR = qr;
+            }
         }
 
         if (connection === 'close') {
