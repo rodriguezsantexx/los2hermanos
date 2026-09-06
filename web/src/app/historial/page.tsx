@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, FormEvent, Fragment } from "react";
+import React, { useEffect, useState, FormEvent } from "react";
 import { apiFetch } from "@/lib/api";
 
 type Movimiento = { id: string; tipo: "Ingreso" | "Egreso"; monto: number; metodo_pago: string; descripcion?: string; fecha: string; usuarios?: { nombre: string } };
@@ -258,7 +258,7 @@ export default function HistorialVentasPage() {
       <section className="space-y-4">
         {errorCaja && <p className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-600">{errorCaja}</p>}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <form onSubmit={guardarMovimiento} className="card space-y-4 h-fit sticky top-24">
+          <form onSubmit={guardarMovimiento} className="card space-y-4 h-fit">
             <h2 className="text-xl font-bold border-b border-gray-100 pb-2">Registrar movimiento</h2>
             <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value as any })} className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3">
               <option>Ingreso</option>
@@ -275,46 +275,37 @@ export default function HistorialVentasPage() {
             <button type="submit" className="btn-primary w-full">Registrar</button>
           </form>
 
-          <div className="md:col-span-2 card overflow-hidden p-0 flex flex-col h-full">
+          <div className="md:col-span-2 card !p-4 flex flex-col h-full">
             {modo === "dia" ? (
               <>
-                <h2 className="border-b border-gray-100 p-5 text-xl font-bold flex justify-between items-center">
+                <h2 className="mb-3 text-xl font-bold flex justify-between items-center">
                   Movimientos del {new Date(fechaStr + "T12:00:00").toLocaleDateString('es-AR')}
                   <span className="text-sm font-medium bg-gray-100 px-3 py-1 rounded-full text-gray-600">{caja.movimientos.length} reg.</span>
                 </h2>
-                <div className="overflow-x-auto flex-1 bg-white">
-                  <table className="w-full min-w-[600px] text-left">
-                    <thead>
-                      <tr className="bg-gray-50 text-xs text-gray-500">
-                        <th className="p-4">HORA</th>
-                        <th className="p-4">TIPO</th>
-                        <th className="p-4">MONTO</th>
-                        <th className="p-4">MÉTODO</th>
-                        <th className="p-4">DESCRIPCIÓN</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {caja.movimientos.map(mov => (
-                        <tr key={mov.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="p-4 text-xs font-medium text-gray-400">
+                <div className="space-y-3">
+                  {caja.movimientos.map(mov => (
+                    <article key={mov.id} className="card !p-4 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-1 rounded-md text-xs font-bold ${mov.tipo === "Ingreso" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                            {mov.tipo}
+                          </span>
+                          <span className="text-xs font-medium text-gray-400">
                             {new Date(mov.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="p-4 font-bold">
-                            <span className={`px-2 py-1 rounded-md text-xs ${mov.tipo === "Ingreso" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                              {mov.tipo}
-                            </span>
-                          </td>
-                          <td className={`p-4 font-bold ${mov.tipo === "Ingreso" ? "text-green-600" : "text-red-600"}`}>
-                            {mov.tipo === "Ingreso" ? "+" : "-"}${Number(mov.monto).toLocaleString("es-AR")}
-                          </td>
-                          <td className="p-4 text-gray-600 text-sm font-medium">{mov.metodo_pago}</td>
-                          <td className="p-4 text-gray-600 text-sm max-w-[200px] truncate" title={mov.descripcion}>{mov.descripcion || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-sm text-gray-600" title={mov.descripcion}>{mov.descripcion || "—"}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className={`text-lg font-black ${mov.tipo === "Ingreso" ? "text-green-600" : "text-red-600"}`}>
+                          {mov.tipo === "Ingreso" ? "+" : "-"}${Number(mov.monto).toLocaleString("es-AR")}
+                        </span>
+                        <span className="text-xs font-medium text-muted">{mov.metodo_pago}</span>
+                      </div>
+                    </article>
+                  ))}
                   {caja.movimientos.length === 0 && (
-                    <div className="p-12 text-center flex flex-col items-center">
+                    <div className="card !p-12 text-center flex flex-col items-center">
                       <span className="text-4xl mb-3">📭</span>
                       <p className="text-gray-400 font-medium">No hay movimientos registrados para este día.</p>
                     </div>
@@ -323,25 +314,18 @@ export default function HistorialVentasPage() {
               </>
             ) : (
               <>
-                <h2 className="border-b border-gray-100 p-5 text-xl font-bold flex justify-between items-center">
+                <h2 className="mb-3 text-xl font-bold flex justify-between items-center">
                   Resumen Diario (Mes: {mesStr})
                   <span className="text-sm font-medium bg-gray-100 px-3 py-1 rounded-full text-gray-600">{cajaMensual.resumen_dias.length} días operativos</span>
                 </h2>
-                <div className="overflow-x-auto flex-1 bg-white">
-                  <table className="w-full min-w-[500px] text-left">
-                    <thead>
-                      <tr className="bg-gray-50 text-xs text-gray-500">
-                        <th className="p-4">FECHA</th>
-                        <th className="p-4 text-right">INGRESOS</th>
-                        <th className="p-4 text-right">EGRESOS</th>
-                        <th className="p-4 text-right">SALDO DÍA</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {cajaMensual.resumen_dias.map(dia => (
-                        <Fragment key={dia.fecha}>
-                          <tr className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={async () => { 
-                            if (expandedDay === dia.fecha) {
+                <div className="space-y-3">
+                  {cajaMensual.resumen_dias.map(dia => {
+                    const abierto = expandedDay === dia.fecha;
+                    return (
+                      <article key={dia.fecha} className={`card !p-4 transition-colors ${abierto ? "ring-2 ring-primary/60" : ""}`}>
+                        <button
+                          onClick={async () => {
+                            if (abierto) {
                               setExpandedDay(null);
                             } else {
                               setExpandedDay(dia.fecha);
@@ -350,51 +334,56 @@ export default function HistorialVentasPage() {
                                 setExpandedDayMovements(data.movimientos);
                               } catch { setExpandedDayMovements([]); }
                             }
-                          }}>
-                            <td className="p-4 font-bold text-gray-700 flex items-center gap-2">
-                              <span className={`text-xs transition-transform ${expandedDay === dia.fecha ? "rotate-90" : ""}`}>▶</span>
-                              {new Date(dia.fecha + "T12:00:00").toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: 'short' })}
-                            </td>
-                            <td className="p-4 text-right font-bold text-green-600">+${dia.ingresos.toLocaleString("es-AR")}</td>
-                            <td className="p-4 text-right font-bold text-red-600">-${dia.egresos.toLocaleString("es-AR")}</td>
-                            <td className="p-4 text-right font-black text-gray-900">${dia.saldo.toLocaleString("es-AR")}</td>
-                          </tr>
-                          {expandedDay === dia.fecha && (
-                            <tr>
-                              <td colSpan={4} className="p-0 bg-gray-50/80 border-b border-gray-200">
-                                <div className="p-4 pl-10 border-l-4 border-primary">
-                                  <h4 className="font-bold text-xs mb-3 text-gray-500 uppercase tracking-wider">Movimientos del Día</h4>
-                                  {expandedDayMovements.length > 0 ? (
-                                    <table className="w-full text-left text-sm bg-white rounded-lg shadow-sm border border-gray-100">
-                                      <thead className="bg-gray-50 text-gray-500 border-b border-gray-100">
-                                        <tr><th className="p-3 font-bold">Tipo</th><th className="p-3 font-bold">Monto</th><th className="p-3 font-bold">Método</th><th className="p-3 font-bold">Descripción</th></tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-gray-50">
-                                        {expandedDayMovements.map(mov => (
-                                          <tr key={mov.id}>
-                                            <td className="p-3 font-bold">
-                                              <span className={`px-2 py-1 rounded-md text-[10px] ${mov.tipo === "Ingreso" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{mov.tipo}</span>
-                                            </td>
-                                            <td className={`p-3 font-bold ${mov.tipo === "Ingreso" ? "text-green-600" : "text-red-600"}`}>${Number(mov.monto).toLocaleString("es-AR")}</td>
-                                            <td className="p-3 text-gray-600">{mov.metodo_pago}</td>
-                                            <td className="p-3 text-gray-500">{mov.descripcion || "—"}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  ) : (
-                                    <p className="text-sm text-gray-500">No hay movimientos detallados.</p>
-                                  )}
+                          }}
+                          className="flex w-full items-center justify-between gap-3 text-left"
+                        >
+                          <p className="font-bold text-gray-900">
+                            {new Date(dia.fecha + "T12:00:00").toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: 'short' })}
+                          </p>
+                          <span className={`text-xs transition-transform ${abierto ? "rotate-90" : ""}`}>▶</span>
+                        </button>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          <div className="rounded-xl bg-green-50 p-2 text-center">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-600">Ingresos</p>
+                            <p className="mt-0.5 text-sm font-black text-green-700">+${dia.ingresos.toLocaleString("es-AR")}</p>
+                          </div>
+                          <div className="rounded-xl bg-red-50 p-2 text-center">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-red-600">Egresos</p>
+                            <p className="mt-0.5 text-sm font-black text-red-700">-${dia.egresos.toLocaleString("es-AR")}</p>
+                          </div>
+                          <div className="rounded-xl bg-gray-900 p-2 text-center">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Saldo</p>
+                            <p className="mt-0.5 text-sm font-black text-white">${dia.saldo.toLocaleString("es-AR")}</p>
+                          </div>
+                        </div>
+                        {abierto && (
+                          <div className="mt-4 space-y-2 border-t border-gray-100 pt-4">
+                            <h4 className="font-bold text-xs mb-2 text-gray-500 uppercase tracking-wider">Movimientos del Día</h4>
+                            {expandedDayMovements.length > 0 ? (
+                              expandedDayMovements.map(mov => (
+                                <div key={mov.id} className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 p-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${mov.tipo === "Ingreso" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{mov.tipo}</span>
+                                      <span className="text-xs text-gray-500">{mov.metodo_pago}</span>
+                                    </div>
+                                    <p className="mt-1 truncate text-sm text-gray-600">{mov.descripcion || "—"}</p>
+                                  </div>
+                                  <span className={`shrink-0 font-bold ${mov.tipo === "Ingreso" ? "text-green-600" : "text-red-600"}`}>
+                                    {mov.tipo === "Ingreso" ? "+" : "-"}${Number(mov.monto).toLocaleString("es-AR")}
+                                  </span>
                                 </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      ))}
-                    </tbody>
-                  </table>
+                              ))
+                            ) : (
+                              <p className="text-sm text-gray-500">No hay movimientos detallados.</p>
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
                   {cajaMensual.resumen_dias.length === 0 && (
-                    <div className="p-12 text-center flex flex-col items-center">
+                    <div className="card !p-12 text-center flex flex-col items-center">
                       <span className="text-4xl mb-3">📅</span>
                       <p className="text-gray-400 font-medium">No hay actividad registrada en este mes.</p>
                     </div>
