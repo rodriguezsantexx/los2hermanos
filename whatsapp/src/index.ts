@@ -156,7 +156,45 @@ app.post('/api/simulate-message', async (req: any, res: any) => {
 
 // Endpoint para ver el estado del bot desde el panel web
 app.get('/api/status', (req: any, res: any) => {
-    res.json({ status: botStatus, qr: currentQR });
+    res.json({
+        status: botStatus,
+        qr: currentQR,
+        pairingCode: currentPairingCode,
+        pairingPending: !!pendingPairingNumber
+    });
+});
+
+// Endpoint para vincular mediante PAIRING CODE (para uso desde el celular,
+// donde no se puede escanear un QR que aparece en la misma pantalla).
+// Requiere el número de WhatsApp (solamente dígitos, con código de país),
+// ej: 549351XXXXXXX
+app.post('/api/pair', async (req: any, res: any) => {
+    try {
+        const { numero } = req.body;
+        if (!numero) {
+            return res.status(400).json({ error: 'Falta el campo numero' });
+        }
+        // Normalizar: eliminar espacios, guiones, signos '+'/'('-')'
+        const limpio = String(numero).replace(/[^0-9]/g, '');
+        if (limpio.length < 8) {
+            return res.status(400).json({ error: 'Numero inválido. Ejemplo: 5493515554444' });
+        }
+
+        console.log('[API] Solicitando vinculo por Pairing Code para:', limpio);
+        pendingPairingNumber = limpio;
+        currentPairingCode = '';
+        currentQR = '';
+
+        // Si todavia estamos desconectados/disponibles, reconectamos ahora
+        if (botStatus === 'disconnected') {
+            connectToWhatsApp();
+        }
+
+        return res.json({ success: true, message: 'Vinculación por código iniciada.' });
+    } catch (err) {
+        console.error('Error en /api/pair:', err);
+        return res.status(500).json({ error: 'Error interno' });
+    }
 });
 
 // Endpoint para reiniciar la sesión (útil cuando se corrompen las llaves de seguridad)
@@ -179,11 +217,13 @@ app.post('/api/restart', (req: any, res: any) => {
     
     botStatus = 'disconnected';
     currentQR = '';
+    currentPairingCode = '';
+    pendingPairingNumber = null;
     
     // Reconectar en 2 segundos
     setTimeout(() => {
         connectToWhatsApp();
-    }, 2000);
+    }, 1800);
     
     res.json({ success: true, message: 'Reiniciando bot...' });
 });
@@ -275,8 +315,10 @@ const FRONT_MEDIA_BASE_URL = process.env.FRONT_MEDIA_BASE_URL ||
 
 // Variable global para acceder al socket desde los eventos del sistema
 let globalSock: any = null;
-let botStatus: 'disconnected' | 'qr' | 'connected' = 'disconnected';
+let botStatus: 'disconnected' | 'qr' | 'paired' | 'connected' = 'disconnected';
 let currentQR: string = '';
+let currentPairingCode: string = '';
+let pendingPairingNumber: string | null = null;
 
 // Historial de conversaciones en memoria
 const conversationHistories: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
@@ -477,6 +519,23 @@ async function connectToWhatsApp() {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Si tenemos un número pendiente y aún no está registrado, generamos un
+    // PAIRING CODE (numérico) en lugar del QR. Así se puede vincular desde el
+    // MISMO celular donde corre la app, algo imposible con el QR tradicional.
+    if (!state.creds.registered && pendingPairingNumber) {
+        try {
+            console.log('[PAIRING] Solicitando código de emparejamiento...');
+            const code = await sock.requestPairingCode(pendingPairingNumber);
+            currentPairingCode = code ?? '';
+            botStatus = 'paired';
+            console.log('[PAIRING] Código generado:', currentPairingCode);
+        } catch (err: any) {
+            console.error('[PAIRING] Error al obtener pairing code:', err?.message || err);
+            currentPairingCode = '';
+            botStatus = 'disconnected';
+        }
+    }
+
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
@@ -490,6 +549,7 @@ async function connectToWhatsApp() {
         if (connection === 'close') {
             botStatus = 'disconnected';
             currentQR = '';
+            currentPairingCode = '';
             const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             console.log('Conexión cerrada. Reconectando:', shouldReconnect);
@@ -501,12 +561,15 @@ async function connectToWhatsApp() {
                 try {
                     fs.rmSync('auth_info_baileys', { recursive: true, force: true });
                 } catch(e) {}
+                pendingPairingNumber = null;
                 // Volvemos a iniciar para generar nuevo QR
                 setTimeout(() => connectToWhatsApp(), 2000);
             }
         } else if (connection === 'open') {
             botStatus = 'connected';
             currentQR = '';
+            currentPairingCode = '';
+            pendingPairingNumber = null;
             console.log('¡Conectado exitosamente a WhatsApp!');
         }
     });

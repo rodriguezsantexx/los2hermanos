@@ -34,6 +34,9 @@ export default function ClientesPage() {
   const [clienteModal, setClienteModal] = useState(false);
   const [clienteForm, setClienteForm] = useState({ nombre: "", telefono: "", direccion: "", localidad_id: "" });
   const [botStatus, setBotStatus] = useState<any>(null);
+  const [pairingCode, setPairingCode] = useState("");
+  const [pairingNumero, setPairingNumero] = useState("");
+  const [pairingLoading, setPairingLoading] = useState(false);
   const mensajesEndRef = useRef<HTMLDivElement>(null);
   const prevMensajesLength = useRef(0);
   const { unreadChats, markAsRead } = useNotifications();
@@ -68,7 +71,10 @@ export default function ClientesPage() {
     const checkStatus = () => {
       fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/status`)
         .then(r => r.json())
-        .then(setBotStatus)
+        .then((data) => {
+          setBotStatus(data);
+          if (data.pairingCode) setPairingCode(data.pairingCode);
+        })
         .catch(() => setBotStatus({ status: 'disconnected' }));
     };
     checkStatus();
@@ -265,6 +271,36 @@ export default function ClientesPage() {
     if (!confirm('¿Seguro que deseas borrar la sesión actual y generar un nuevo QR?')) return;
     await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/restart`, { method: 'POST' });
     setBotStatus({ status: 'disconnected' });
+    setPairingCode("");
+  };
+
+  const solicitarPairingCode = async () => {
+    if (!pairingNumero.trim()) {
+      alert("Ingresá el número de WhatsApp que querés vincular (con código de país, ej: 5493515554444).");
+      return;
+    }
+    setPairingLoading(true);
+    setPairingCode("");
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero: pairingNumero.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al solicitar el código');
+      // El código llega por el polling de /api/status en unos segundos
+      setTimeout(() => {
+        fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/status`)
+          .then(r => r.json())
+          .then((d) => { if (d.pairingCode) setPairingCode(d.pairingCode); })
+          .catch(() => undefined);
+      }, 2500);
+    } catch (e: any) {
+      alert(e.message || "No se pudo solicitar el código de vinculación.");
+    } finally {
+      setPairingLoading(false);
+    }
   };
 
   const cambiarModo = async () => {
@@ -291,22 +327,57 @@ export default function ClientesPage() {
       </header>
 
       {botStatus && botStatus.status !== 'connected' && (
-        <div className="mb-6 rounded-2xl bg-amber-50 border border-amber-200 p-6 flex flex-col md:flex-row gap-6 items-center shadow-sm">
-          {botStatus.status === 'qr' && botStatus.qr ? (
-            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(botStatus.qr)}`} alt="QR Code" className="w-[150px] h-[150px] bg-white p-2 rounded-xl border shadow-sm" />
-          ) : (
-            <div className="w-[150px] h-[150px] bg-white p-2 rounded-xl border shadow-sm flex items-center justify-center">
-              <span className="text-4xl animate-spin">⏳</span>
+        <div className="mb-6 rounded-2xl bg-amber-50 border border-amber-200 p-6 shadow-sm">
+          <div className="flex flex-col md:flex-row gap-6 items-center">
+            <div className="flex h-[150px] w-[150px] shrink-0 items-center justify-center rounded-xl border bg-white shadow-sm">
+              {pairingCode ? (
+                <div className="text-center">
+                  <div className="text-3xl font-black tracking-widest text-amber-900 px-2">
+                    {pairingCode.replace(/(\d{4})/, '$1-')}
+                  </div>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-600">Código de vinculación</p>
+                </div>
+              ) : (
+                <span className="text-4xl animate-spin">⏳</span>
+              )}
             </div>
-          )}
-          <div>
-            <h3 className="text-xl font-bold text-amber-900 mb-2">WhatsApp Desconectado</h3>
-            <p className="text-amber-800 mb-4">
-              El bot de WhatsApp perdió la conexión o necesita ser escaneado de nuevo para funcionar.
-              Abre WhatsApp en tu teléfono, ve a Dispositivos Vinculados y escanea el código QR de la izquierda.
-            </p>
-            <button onClick={reiniciarBot} className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-sm">
-              Generar un QR Nuevo
+            <div className="min-w-0 flex-1">
+              <h3 className="text-xl font-bold text-amber-900 mb-2">WhatsApp Desconectado</h3>
+              <p className="text-amber-800 mb-4">
+                El bot de WhatsApp perdió la conexión o necesita ser vinculado de nuevo.
+                Como la app se usa desde el celular, no hace falta escanear un QR: ingresá el número
+                de WhatsApp y te mostramos un <b>código numérico</b> para vincular desde el mismo teléfono.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="Tu número de WhatsApp (ej: 5493515554444)"
+                  value={pairingNumero}
+                  onChange={e => setPairingNumero(e.target.value)}
+                  className="flex-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
+                />
+                <button
+                  onClick={solicitarPairingCode}
+                  disabled={pairingLoading}
+                  className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-sm whitespace-nowrap"
+                >
+                  {pairingLoading ? "Generando..." : "Generar Código"}
+                </button>
+              </div>
+              {pairingCode && (
+                <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-amber-800">
+                  <li>En tu celular abrí <b>WhatsApp</b>.</li>
+                  <li>Andá a <b>Dispositivos vinculados</b> → <b>Vincular un dispositivo</b>.</li>
+                  <li>Tocá <b>Vincular con número de teléfono</b> (en vez de escanear el QR).</li>
+                  <li>Ingresá el código <b className="text-amber-900">{pairingCode.replace(/(\d{4})/, '$1-')}</b>.</li>
+                </ol>
+              )}
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button onClick={reiniciarBot} className="text-sm font-semibold text-amber-700 hover:text-amber-900 underline">
+              🔄 Reiniciar sesión (borrar credenciales)
             </button>
           </div>
         </div>
