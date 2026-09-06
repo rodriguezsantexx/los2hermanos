@@ -276,7 +276,7 @@ export default function ClientesPage() {
 
   const solicitarPairingCode = async () => {
     if (!pairingNumero.trim()) {
-      alert("Ingresá el número de WhatsApp que querés vincular (con código de país, ej: 5493515554444).");
+      alert("Ingresá tu número de celular (ej: 3515554444). El 549 se agrega automáticamente.");
       return;
     }
     setPairingLoading(true);
@@ -354,7 +354,7 @@ export default function ClientesPage() {
                 <input
                   type="tel"
                   inputMode="numeric"
-                  placeholder="Tu número de WhatsApp (ej: 5493515554444)"
+                  placeholder="Tu número de celular (ej: 3515554444)"
                   value={pairingNumero}
                   onChange={e => setPairingNumero(e.target.value)}
                   className="flex-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
@@ -367,6 +367,9 @@ export default function ClientesPage() {
                   {pairingLoading ? "Generando..." : "Generar Código"}
                 </button>
               </div>
+              <p className="mt-2 text-xs text-amber-700">
+                Ingresá tu número sin el 549 (ej: 3515554444). El prefijo se agrega solo.
+              </p>
               {pairingCode && (
                 <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-amber-800">
                   <li>En tu celular abrí <b>WhatsApp</b>.</li>

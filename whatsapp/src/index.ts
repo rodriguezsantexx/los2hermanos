@@ -166,8 +166,8 @@ app.get('/api/status', (req: any, res: any) => {
 
 // Endpoint para vincular mediante PAIRING CODE (para uso desde el celular,
 // donde no se puede escanear un QR que aparece en la misma pantalla).
-// Requiere el número de WhatsApp (solamente dígitos, con código de país),
-// ej: 549351XXXXXXX
+// El usuario ingresa SOLO su número local (ej: 3515554444) y acá le
+// agregamos automáticamente el prefijo de celular argentino (549).
 app.post('/api/pair', async (req: any, res: any) => {
     try {
         const { numero } = req.body;
@@ -175,9 +175,19 @@ app.post('/api/pair', async (req: any, res: any) => {
             return res.status(400).json({ error: 'Falta el campo numero' });
         }
         // Normalizar: eliminar espacios, guiones, signos '+'/'('-')'
-        const limpio = String(numero).replace(/[^0-9]/g, '');
-        if (limpio.length < 8) {
-            return res.status(400).json({ error: 'Numero inválido. Ejemplo: 5493515554444' });
+        let limpio = String(numero).replace(/[^0-9]/g, '');
+        // Agregar el prefijo 549 (celular argentino) si no viene completo
+        if (limpio.startsWith('549')) {
+            // ya está en formato completo
+        } else if (limpio.startsWith('54')) {
+            // 54 + área sin el 9 → insertar el 9 (y quitar 0 del área si lo trae)
+            limpio = '549' + limpio.slice(2).replace(/^0/, '');
+        } else {
+            // formato local → quitar el 0 inicial del área y agregar 549
+            limpio = '549' + limpio.replace(/^0/, '');
+        }
+        if (limpio.length < 11) {
+            return res.status(400).json({ error: 'Numero inválido. Ejemplo: 3515554444' });
         }
 
         console.log('[API] Solicitando vinculo por Pairing Code para:', limpio);
