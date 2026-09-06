@@ -81,10 +81,10 @@ def caja_resumen_mensual(mes: str | None = Query(default=None), current_user=Dep
     ingresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Ingreso"), Decimal(0))
     egresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Egreso"), Decimal(0))
     
-    # Agrupar ingresos por día para un gráfico o resumen rápido
+    # Agrupar ingresos por día (en hora Argentina) para un gráfico o resumen rápido
     ingresos_por_dia = {}
     for mov in movimientos:
-        dia = mov["fecha"][:10] # YYYY-MM-DD
+        dia = datetime.fromisoformat(mov["fecha"]).astimezone(ZONA_ARG).strftime("%Y-%m-%d")
         if dia not in ingresos_por_dia:
             ingresos_por_dia[dia] = {"ingresos": Decimal(0), "egresos": Decimal(0)}
         if mov["tipo"] == "Ingreso":
