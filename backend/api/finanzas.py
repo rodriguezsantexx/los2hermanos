@@ -5,9 +5,9 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query
 from postgrest.exceptions import APIError
 
-from auth.dependencies import admin_required
+from auth.dependencies import admin_required, get_current_user
 from database.connection import supabase
-from schemas.finanzas import CierreCajaCreate, MovimientoCajaCreate, PagoCreate
+from schemas.finanzas import CierreCajaCreate, GastoChoferCreate, MovimientoCajaCreate, PagoCreate
 
 router = APIRouter()
 
@@ -118,6 +118,32 @@ def crear_movimiento_caja(movimiento: MovimientoCajaCreate, current_user=Depends
     try:
         data = movimiento.model_dump(mode="json")
         data["usuario_id"] = current_user["id"]
+        result = supabase.table("movimientos_caja").insert(data).execute()
+        return result.data[0]
+    except APIError as error:
+        raise HTTPException(status_code=400, detail=error.message)
+
+
+@router.get("/caja/gastos")
+def listar_gastos(current_user=Depends(get_current_user)):
+    """Lista los gastos (egresos). El admin ve todos; el chofer solo los suyos."""
+    query = supabase.table("movimientos_caja").select("id, monto, metodo_pago, descripcion, fecha").eq("tipo", "Egreso")
+    if current_user.get("roles", {}).get("nombre") != "ADMIN":
+        query = query.eq("usuario_id", current_user["id"])
+    return query.order("fecha", desc=True).limit(50).execute().data or []
+
+
+@router.post("/caja/gastos")
+def registrar_gasto(gasto: GastoChoferCreate, current_user=Depends(get_current_user)):
+    """Registra un gasto del chofer (siempre egreso en efectivo). Se descuenta en el historial."""
+    try:
+        data = {
+            "tipo": "Egreso",
+            "monto": json_money(gasto.monto),
+            "metodo_pago": "Efectivo",
+            "usuario_id": current_user["id"],
+            "descripcion": f"{gasto.categoria}" + (f" - {gasto.descripcion}" if gasto.descripcion else ""),
+        }
         result = supabase.table("movimientos_caja").insert(data).execute()
         return result.data[0]
     except APIError as error:

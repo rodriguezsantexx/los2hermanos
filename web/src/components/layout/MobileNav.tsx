@@ -32,10 +32,12 @@ export default function MobileNav() {
   const showAdminMenu = !isDriverRoute && isAdmin;
   const homePath = isDriverRoute ? (pathname.includes("huerta-grande") ? "/chofer/huerta-grande" : "/chofer/la-falda") : userHomePath;
   const pedidosPath = isDriverRoute ? `${homePath}/pedidos` : "/pedidos";
+  const gastosPath = isDriverRoute ? `${homePath}/gastos` : null;
 
   const mainMenu = [
     { name: "Inicio", icon: "🏠", path: homePath },
     { name: "Pedidos", icon: "📦", path: pedidosPath },
+    ...(isDriverRoute ? [{ name: "Gastos", icon: "⛽", path: gastosPath! }] : []),
     ...(showAdminMenu ? [{ name: "Clientes", icon: "👥", path: "/clientes" }] : []),
   ];
 

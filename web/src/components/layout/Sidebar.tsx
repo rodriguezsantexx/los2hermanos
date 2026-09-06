@@ -28,9 +28,11 @@ export default function Sidebar() {
   const showAdminMenu = !isDriverRoute && isAdmin;
   const homePath = isDriverRoute ? (pathname.includes("huerta-grande") ? "/chofer/huerta-grande" : "/chofer/la-falda") : userHomePath;
   const pedidosPath = isDriverRoute ? `${homePath}/pedidos` : "/pedidos";
+  const gastosPath = isDriverRoute ? `${homePath}/gastos` : null;
   const menu = [
     { name: "Inicio", icon: "🏠", path: homePath },
     { name: "Pedidos", icon: "📦", path: pedidosPath },
+    ...(isDriverRoute ? [{ name: "Gastos", icon: "⛽", path: gastosPath! }] : []),
     ...(showAdminMenu ? [{ name: "Historial de Ventas", icon: "📊", path: "/historial" }, { name: "Productos", icon: "🛒", path: "/productos" }, { name: "Clientes", icon: "👥", path: "/clientes" }] : [])
   ];
 

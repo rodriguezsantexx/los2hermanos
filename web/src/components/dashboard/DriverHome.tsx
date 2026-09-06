@@ -161,6 +161,12 @@ export default function DriverHome({ localidad }: { localidad: string }) {
       >
         📦 Ver todos los pedidos
       </Link>
+      <Link
+        href={`/chofer/${zonaSlug}/gastos`}
+        className="btn-secondary w-full !shadow-none active:scale-95 transition-transform"
+      >
+        ⛽ Registrar gasto
+      </Link>
     </main>
   );
 }
