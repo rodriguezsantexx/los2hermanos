@@ -174,7 +174,12 @@ def get_cierre_caja(fecha: date | None = Query(default=None), current_user=Depen
 @router.post("/caja/cierre")
 def guardar_cierre_caja(payload: CierreCajaCreate, current_user=Depends(admin_required)):
     inicio, fin = day_window(payload.fecha)
-    efectivo_esperado = efectivo_del_dia(inicio, fin)
+    # Si el frontend envía el efectivo esperado (calculado en hora Argentina), usarlo;
+    # si no, calcularlo acá.
+    if payload.efectivo_esperado is not None:
+        efectivo_esperado = payload.efectivo_esperado
+    else:
+        efectivo_esperado = efectivo_del_dia(inicio, fin)
     diferencia = payload.efectivo_contado - efectivo_esperado
     data = {
         "fecha": payload.fecha.isoformat(),

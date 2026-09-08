@@ -91,6 +91,18 @@ export default function HistorialVentasPage() {
     total: entregados.reduce((sum, p) => sum + Number(p.total || 0), 0),
   };
 
+  // Efectivo a contar = ingresos en efectivo − egresos en efectivo del día.
+  // Se calcula en el frontend (pedidos entregados en fecha Argentina + movimientos manuales)
+  // para no depender de la zona horaria del backend desplegado.
+  const esMovimientoDeVenta = (m: Movimiento) => (m.descripcion || "").includes("Venta Pedido");
+  const ingresosEfectivoManual = caja.movimientos
+    .filter((m) => m.tipo === "Ingreso" && !esMovimientoDeVenta(m) && (m.metodo_pago || "").toLowerCase().includes("efectivo"))
+    .reduce((s, m) => s + Number(m.monto), 0);
+  const egresosEfectivo = caja.movimientos
+    .filter((m) => m.tipo === "Egreso" && (m.metodo_pago || "").toLowerCase().includes("efectivo"))
+    .reduce((s, m) => s + Number(m.monto), 0);
+  const efectivoAContar = cierre.Efectivo + ingresosEfectivoManual - egresosEfectivo;
+
   // Generar últimos 12 meses para el selector (en hora argentina)
   const hoyArg = new Date();
   const anioArg = Number(new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_ARG, year: "numeric" }).format(hoyArg));
@@ -154,7 +166,7 @@ export default function HistorialVentasPage() {
     setGuardandoCierre(true);
     setErrorCaja("");
     try {
-      const data = await apiFetch<CierreCaja>("/api/finanzas/caja/cierre", { method: "POST", body: JSON.stringify({ fecha: fechaStr, efectivo_contado: Number(efectivoContado), observaciones: observaciones || null }) });
+      const data = await apiFetch<CierreCaja>("/api/finanzas/caja/cierre", { method: "POST", body: JSON.stringify({ fecha: fechaStr, efectivo_contado: Number(efectivoContado), efectivo_esperado: efectivoAContar, observaciones: observaciones || null }) });
       setCierreInfo({ fecha: fechaStr, efectivo_esperado: data.efectivo_esperado, cierre: data });
       setModalCierre(false);
       setEfectivoContado("");
@@ -235,7 +247,7 @@ export default function HistorialVentasPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">💰 Efectivo a contar</p>
-                <p className="mt-1 text-2xl font-black text-gray-900">${(cierreInfo?.efectivo_esperado ?? 0).toLocaleString("es-AR")}</p>
+                <p className="mt-1 text-2xl font-black text-gray-900">${efectivoAContar.toLocaleString("es-AR")}</p>
                 <p className="text-xs text-emerald-700/70 mt-0.5">Ingresos en efectivo − gastos en efectivo del día</p>
               </div>
               {cierreInfo?.cierre ? (
@@ -405,7 +417,7 @@ export default function HistorialVentasPage() {
             <p className="text-sm text-muted">Cierre del {new Date(fechaStr + "T12:00:00").toLocaleDateString('es-AR')}</p>
             <div className="rounded-xl bg-emerald-50 p-4 text-center">
               <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Efectivo esperado</p>
-              <p className="text-3xl font-black text-gray-900">${(cierreInfo?.efectivo_esperado ?? 0).toLocaleString("es-AR")}</p>
+              <p className="text-3xl font-black text-gray-900">${efectivoAContar.toLocaleString("es-AR")}</p>
             </div>
             <label className="block text-sm font-bold text-gray-700">
               Efectivo contado
