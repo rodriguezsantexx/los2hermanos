@@ -414,6 +414,24 @@ def get_pedidos(current_user=Depends(get_current_user)):
 def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get_current_user)):
     return supabase.table("pedidos").update({"estado": "En reparto"}).eq("id", pedido_id).execute().data
 
+
+def normalizar_metodo_pago(valor: str | None) -> str:
+    """Normaliza el método de pago a valores canónicos (Efectivo/Transferencia/MercadoPago).
+    Si viene vacío o 'A confirmar', asume Efectivo (el pago se cobra al entregar)."""
+    if not valor:
+        return "Efectivo"
+    v = valor.strip().lower()
+    if "efectivo" in v:
+        return "Efectivo"
+    if "mercado" in v:
+        return "MercadoPago"
+    if "transferencia" in v or "digital" in v:
+        return "Transferencia"
+    if "confirmar" in v or "pendiente" in v:
+        return "Efectivo"
+    return valor.strip()
+
+
 @router.post("/{pedido_id}/entregar")
 def entregar_pedido(pedido_id: str, update: PedidoStatusUpdate, current_user=Depends(get_current_user)):
     # Solo ADMIN o el Chofer asignado pueden entregar
@@ -432,24 +450,26 @@ def entregar_pedido(pedido_id: str, update: PedidoStatusUpdate, current_user=Dep
     if not update.metodo_pago:
         raise HTTPException(status_code=400, detail="Debe especificar el método de pago al entregar")
 
+    metodo_pago = normalizar_metodo_pago(update.metodo_pago)
+
     # Marcar como entregado
     supabase.table("pedidos").update({
         "estado": "Entregado", 
-        "metodo_pago": update.metodo_pago
+        "metodo_pago": metodo_pago
     }).eq("id", pedido_id).execute()
     
     # Registrar Venta
     supabase.table("ventas").insert({
         "pedido_id": pedido_id,
         "total": pedido["total"],
-        "metodo_pago": update.metodo_pago
+        "metodo_pago": metodo_pago
     }).execute()
     
     # Registrar Caja (ingreso de plata real)
     supabase.table("movimientos_caja").insert({
         "tipo": "Ingreso",
         "monto": pedido["total"],
-        "metodo_pago": update.metodo_pago,
+        "metodo_pago": metodo_pago,
         "usuario_id": current_user["id"],
         "descripcion": f"Venta Pedido #{pedido_id}"
     }).execute()

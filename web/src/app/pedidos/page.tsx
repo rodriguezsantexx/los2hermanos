@@ -6,7 +6,7 @@ import { getToken, getUser, logoutActive } from "@/lib/session";
 
 type Producto = { id: string; nombre: string; precio: number; stock_actual: number };
 type Detalle = { producto: string; cantidad: number; precio: number };
-type Cliente = { id: string; nombre: string; localidad_id: string; localidades?: { nombre?: string } | null };
+type Cliente = { id: string; nombre: string; localidad_id: string; direccion?: string; localidades?: { nombre?: string } | null };
 type Localidad = { id: string; nombre: string };
 
 interface PedidoUI {
@@ -65,6 +65,8 @@ function PedidosContent() {
   const [creandoCliente, setCreandoCliente] = useState(false);
   const [nuevoClienteNombre, setNuevoClienteNombre] = useState("");
   const [nuevoClienteLocalidad, setNuevoClienteLocalidad] = useState("");
+  const [nuevoClienteDireccion, setNuevoClienteDireccion] = useState("");
+  const [direccionEntrega, setDireccionEntrega] = useState("");
   const [pedidoAbierto, setPedidoAbierto] = useState<string | null>(null);
   const [pago, setPago] = useState("A confirmar");
   const [tipoPedido, setTipoPedido] = useState("Envío");
@@ -208,6 +210,23 @@ function PedidosContent() {
     };
 
     try {
+      // Guardar la última dirección usada en el cliente (si cambió)
+      const direccionNueva = direccionEntrega.trim();
+      if (direccionNueva && direccionNueva !== clienteSeleccionado?.direccion) {
+        const updRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/${cliente}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+          body: JSON.stringify({ direccion: direccionNueva }),
+        });
+        if (!updRes.ok) {
+          const errorData = await updRes.json();
+          throw new Error(errorData.detail || "Error al actualizar la dirección del cliente");
+        }
+        setClientes((prev) =>
+          prev.map((c) => (c.id === cliente ? { ...c, direccion: direccionNueva } : c))
+        );
+      }
+
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos/`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
@@ -262,12 +281,15 @@ function PedidosContent() {
     setTipoPedido("Envío");
     setCreandoCliente(false);
     setNuevoClienteNombre("");
+    setNuevoClienteDireccion("");
+    setDireccionEntrega("");
     setModalAbierto(true);
   };
 
   const abrirCrearCliente = () => {
     setNuevoClienteNombre("");
     setNuevoClienteLocalidad(localidades[0]?.id || "");
+    setNuevoClienteDireccion("");
     setCreandoCliente(true);
   };
 
@@ -279,7 +301,11 @@ function PedidosContent() {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ nombre, localidad_id: nuevoClienteLocalidad }),
+        body: JSON.stringify({
+          nombre,
+          localidad_id: nuevoClienteLocalidad,
+          direccion: nuevoClienteDireccion.trim() || null,
+        }),
       });
       if (!res.ok) {
         const errorData = await res.json();
@@ -292,7 +318,9 @@ function PedidosContent() {
       };
       setClientes((prev) => [...prev, nuevoConLocalidad]);
       setCliente(nuevo.id);
+      setDireccionEntrega(nuevoClienteDireccion.trim());
       setNuevoClienteNombre("");
+      setNuevoClienteDireccion("");
       setCreandoCliente(false);
       setPaso(2);
     } catch (err) {
@@ -301,13 +329,27 @@ function PedidosContent() {
   };
 
   const marcarEntregado = (uuid: string, pagoMetodo: string) => {
+    let metodo = pagoMetodo;
+    if (!metodo || metodo === "A confirmar") {
+      const respuesta = window.prompt("¿Cómo abonó el cliente?\nEscribí: Efectivo o Transferencia", "Efectivo");
+      if (respuesta === null) return; // canceló
+      const r = respuesta.trim().toLowerCase();
+      metodo = r.includes("transferencia") || r.includes("mercado") ? "Transferencia" : "Efectivo";
+    }
     fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos/${uuid}/entregar`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-      body: JSON.stringify({ estado: "Entregado", metodo_pago: pagoMetodo }),
-    }).then(() => {
-      if (typeof (window as any).refreshPedidos === "function") (window as any).refreshPedidos();
-    });
+      body: JSON.stringify({ estado: "Entregado", metodo_pago: metodo }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((d) => {
+            throw new Error(d.detail || "Error al marcar como entregado");
+          });
+        }
+        if (typeof (window as any).refreshPedidos === "function") (window as any).refreshPedidos();
+      })
+      .catch((err) => alert(err instanceof Error ? err.message : "Error al marcar como entregado"));
   };
 
   return (
@@ -402,6 +444,13 @@ function PedidosContent() {
                           <option key={l.id} value={l.id}>{l.nombre}</option>
                         ))}
                       </select>
+                      <input
+                        type="text"
+                        placeholder="Dirección (calle, número, referencia)"
+                        value={nuevoClienteDireccion}
+                        onChange={(e) => setNuevoClienteDireccion(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-white p-3"
+                      />
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -431,6 +480,7 @@ function PedidosContent() {
                             type="button"
                             onClick={() => {
                               setCliente(c.id);
+                              setDireccionEntrega(c.direccion || "");
                               setPaso(2);
                             }}
                             className={`w-full rounded-xl border-2 p-4 text-left transition-colors active:scale-[0.98] ${
@@ -511,6 +561,16 @@ function PedidosContent() {
 
               {paso === 3 && (
                 <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Dirección de entrega</p>
+                    <input
+                      type="text"
+                      placeholder="Calle, número, referencia"
+                      value={direccionEntrega}
+                      onChange={(e) => setDireccionEntrega(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-gray-200 bg-gray-50 p-3"
+                    />
+                  </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700">Método de pago</p>
                     <div className="mt-2 grid grid-cols-3 gap-2">

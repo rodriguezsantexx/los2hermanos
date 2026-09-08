@@ -153,8 +153,8 @@ def registrar_gasto(gasto: GastoChoferCreate, current_user=Depends(get_current_u
 def efectivo_del_dia(inicio: str, fin: str) -> Decimal:
     """Efectivo esperado en caja = ingresos en efectivo - egresos en efectivo del período."""
     movimientos = supabase.table("movimientos_caja").select("tipo, monto, metodo_pago").gte("fecha", inicio).lt("fecha", fin).execute().data or []
-    ingresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Ingreso" and item["metodo_pago"] == "Efectivo"), Decimal(0))
-    egresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Egreso" and item["metodo_pago"] == "Efectivo"), Decimal(0))
+    ingresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Ingreso" and (item.get("metodo_pago") or "").strip().lower() == "efectivo"), Decimal(0))
+    egresos = sum((money(item["monto"]) for item in movimientos if item["tipo"] == "Egreso" and (item.get("metodo_pago") or "").strip().lower() == "efectivo"), Decimal(0))
     return ingresos - egresos
 
 

@@ -9,18 +9,19 @@ type ApiPedido = {
   estado: string;
   metodo_pago?: string;
   pago_verificado?: boolean;
-  clientes?: { nombre?: string } | null;
+  clientes?: { nombre?: string; direccion?: string } | null;
   localidades?: { nombre?: string } | null;
   detalle_pedidos?: { cantidad: number; productos?: { nombre?: string } | null }[];
 };
 
-type DriverOrder = ApiPedido & { cliente: string; localidad: string; detalle: string };
+type DriverOrder = ApiPedido & { cliente: string; localidad: string; direccion: string; detalle: string };
 
 function normalize(pedido: ApiPedido): DriverOrder {
   return {
     ...pedido,
     cliente: pedido.clientes?.nombre || "Cliente sin nombre",
     localidad: pedido.localidades?.nombre || "Sin localidad",
+    direccion: pedido.clientes?.direccion || "",
     detalle:
       pedido.detalle_pedidos
         ?.map(
@@ -104,6 +105,7 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
           </p>
           <p className="mt-0.5 text-xs font-medium text-muted">
             📍 {pedido.localidad}
+            {pedido.direccion ? ` · ${pedido.direccion}` : ""}
           </p>
         </div>
         <span className={estiloBadgeEstado(pedido.estado)}>{pedido.estado}</span>
