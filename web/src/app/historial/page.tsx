@@ -225,7 +225,7 @@ export default function HistorialVentasPage() {
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
-            { pago: "Efectivo", monto: cierre.Efectivo },
+            { pago: "Efectivo", monto : cierre.Efectivo },
             { pago: "Digital", monto: cierre.Digital },
           ].map(({ pago, monto }) => {
             const info = infoPago(pago);
