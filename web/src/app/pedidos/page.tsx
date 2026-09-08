@@ -62,6 +62,9 @@ function PedidosContent() {
   const [carrito, setCarrito] = useState<Record<string, number>>({});
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [busquedaProducto, setBusquedaProducto] = useState("");
+  const [creandoCliente, setCreandoCliente] = useState(false);
+  const [nuevoClienteNombre, setNuevoClienteNombre] = useState("");
+  const [nuevoClienteLocalidad, setNuevoClienteLocalidad] = useState("");
   const [pedidoAbierto, setPedidoAbierto] = useState<string | null>(null);
   const [pago, setPago] = useState("A confirmar");
   const [tipoPedido, setTipoPedido] = useState("Envío");
@@ -257,7 +260,44 @@ function PedidosContent() {
     setBusquedaProducto("");
     setPago("A confirmar");
     setTipoPedido("Envío");
+    setCreandoCliente(false);
+    setNuevoClienteNombre("");
     setModalAbierto(true);
+  };
+
+  const abrirCrearCliente = () => {
+    setNuevoClienteNombre("");
+    setNuevoClienteLocalidad(localidades[0]?.id || "");
+    setCreandoCliente(true);
+  };
+
+  const crearClienteYContinuar = async () => {
+    const nombre = nuevoClienteNombre.trim();
+    if (!nombre) return alert("Ingresá el nombre del cliente");
+    if (!nuevoClienteLocalidad) return alert("Seleccioná una localidad");
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ nombre, localidad_id: nuevoClienteLocalidad }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Error al crear el cliente");
+      }
+      const nuevo = await res.json();
+      const nuevoConLocalidad = {
+        ...nuevo,
+        localidades: localidades.find((l) => l.id === nuevo.localidad_id) || null,
+      };
+      setClientes((prev) => [...prev, nuevoConLocalidad]);
+      setCliente(nuevo.id);
+      setNuevoClienteNombre("");
+      setCreandoCliente(false);
+      setPaso(2);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al crear el cliente");
+    }
   };
 
   const marcarEntregado = (uuid: string, pagoMetodo: string) => {
@@ -287,7 +327,7 @@ function PedidosContent() {
 
       {puedeCrear && modalAbierto && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="flex max-h-[94vh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl">
+          <div className="flex h-full w-full max-w-lg flex-col bg-white shadow-xl sm:h-auto sm:max-h-[94vh] sm:rounded-2xl">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-gray-100 p-4">
               <h3 className="text-lg font-bold text-gray-900">Nuevo pedido</h3>
@@ -341,27 +381,76 @@ function PedidosContent() {
                     onChange={(e) => setBusquedaCliente(e.target.value)}
                     className="w-full rounded-xl border border-gray-200 bg-gray-50 p-3"
                   />
-                  <div className="max-h-[50vh] space-y-2 overflow-y-auto">
-                    {clientesFiltrados.length === 0 && (
-                      <p className="p-4 text-center text-sm text-muted">No se encontraron clientes.</p>
-                    )}
-                    {clientesFiltrados.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          setCliente(c.id);
-                          setPaso(2);
-                        }}
-                        className={`w-full rounded-xl border-2 p-4 text-left transition-colors active:scale-[0.98] ${
-                          cliente === c.id ? "border-primary bg-primary/5" : "border-gray-200 bg-white"
-                        }`}
+
+                  {creandoCliente ? (
+                    <div className="space-y-3 rounded-xl border-2 border-primary bg-primary/5 p-4">
+                      <p className="text-sm font-bold text-primary">➕ Nuevo cliente</p>
+                      <input
+                        type="text"
+                        placeholder="Nombre del cliente"
+                        value={nuevoClienteNombre}
+                        onChange={(e) => setNuevoClienteNombre(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-white p-3"
+                        autoFocus
+                      />
+                      <select
+                        value={nuevoClienteLocalidad}
+                        onChange={(e) => setNuevoClienteLocalidad(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-white p-3"
                       >
-                        <p className="font-bold text-gray-900">{c.nombre}</p>
-                        <p className="mt-0.5 text-xs text-muted">📍 {c.localidades?.nombre || "Sin localidad"}</p>
+                        {localidades.map((l) => (
+                          <option key={l.id} value={l.id}>{l.nombre}</option>
+                        ))}
+                      </select>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCreandoCliente(false)}
+                          className="flex-1 rounded-xl bg-gray-100 px-4 py-3 font-bold text-gray-600 active:scale-95"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={crearClienteYContinuar}
+                          className="btn-primary flex-1 active:scale-95"
+                        >
+                          Crear y continuar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="max-h-[45vh] space-y-2 overflow-y-auto">
+                        {clientesFiltrados.length === 0 && (
+                          <p className="p-4 text-center text-sm text-muted">No se encontraron clientes.</p>
+                        )}
+                        {clientesFiltrados.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setCliente(c.id);
+                              setPaso(2);
+                            }}
+                            className={`w-full rounded-xl border-2 p-4 text-left transition-colors active:scale-[0.98] ${
+                              cliente === c.id ? "border-primary bg-primary/5" : "border-gray-200 bg-white"
+                            }`}
+                          >
+                            <p className="font-bold text-gray-900">{c.nombre}</p>
+                            <p className="mt-0.5 text-xs text-muted">📍 {c.localidades?.nombre || "Sin localidad"}</p>
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={abrirCrearCliente}
+                        className="w-full rounded-xl border-2 border-dashed border-primary/40 px-4 py-3 font-bold text-primary active:scale-[0.98]"
+                      >
+                        ➕ Crear nuevo cliente
                       </button>
-                    ))}
-                  </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -388,8 +477,8 @@ function PedidosContent() {
                             sinStock ? "border-gray-100 bg-gray-50 opacity-60" : "border-gray-200 bg-white"
                           }`}
                         >
-                          <div className="min-w-0">
-                            <p className="truncate font-bold text-gray-900">{p.nombre}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold leading-snug text-gray-900">{p.nombre}</p>
                             <p className="text-xs text-muted">
                               ${p.precio.toLocaleString("es-AR")} · Stock: {p.stock_actual}
                             </p>
@@ -581,9 +670,9 @@ function PedidosContent() {
                     {pedido.detalles.length > 0 ? (
                       <ul className="space-y-1.5">
                         {pedido.detalles.map((d, idx) => (
-                          <li key={idx} className="flex items-center justify-between text-sm">
-                            <span className="text-gray-700">{d.producto} × {d.cantidad}</span>
-                            <span className="font-semibold text-gray-900">${(d.precio * d.cantidad).toLocaleString("es-AR")}</span>
+                          <li key={idx} className="flex items-start justify-between gap-2 text-sm">
+                            <span className="min-w-0 text-gray-700">{d.producto} × {d.cantidad}</span>
+                            <span className="shrink-0 font-semibold text-gray-900">${(d.precio * d.cantidad).toLocaleString("es-AR")}</span>
                           </li>
                         ))}
                       </ul>
