@@ -8,6 +8,7 @@ import mercadopago
 from database.connection import supabase
 from schemas.pedido import PedidoCreate, PedidoStatusUpdate
 from auth.dependencies import get_current_user, admin_required
+from utils.notificaciones import crear_notificacion
 
 router = APIRouter()
 
@@ -130,7 +131,39 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
                 mp_link = preference.get("init_point")
         except Exception as e:
             print("Error creando preferencia MP:", str(e))
-        
+
+    # Notificaciones: avisar al ADMIN y al chofer asignado
+    cliente_nombre = "Cliente"
+    try:
+        cli_res = supabase.table("clientes").select("nombre").eq("id", pedido.cliente_id).execute()
+        if cli_res.data:
+            cliente_nombre = cli_res.data[0]["nombre"]
+    except Exception:
+        pass
+
+    crear_notificacion(
+        "nuevo_pedido",
+        "🆕 Nuevo pedido",
+        f"{cliente_nombre} - ${total_calculado:,.0f} ({nombre_localidad.title()})",
+        "ADMIN",
+        nuevo_pedido_id,
+    )
+
+    if chofer_id:
+        try:
+            rol_res = supabase.table("usuarios").select("roles(nombre)").eq("id", chofer_id).execute()
+            rol_chofer = rol_res.data[0]["roles"]["nombre"] if rol_res.data else None
+        except Exception:
+            rol_chofer = None
+        if rol_chofer:
+            crear_notificacion(
+                "nuevo_pedido",
+                "🆕 Nuevo pedido asignado",
+                f"{cliente_nombre} - ${total_calculado:,.0f}",
+                rol_chofer,
+                nuevo_pedido_id,
+            )
+
     return {"message": "Pedido creado", "pedido_id": nuevo_pedido_id, "chofer_asignado": chofer_id, "mp_link": mp_link}
 
 from pydantic import BaseModel
@@ -262,7 +295,39 @@ def create_pedido_bot(pedido: PedidoBot):
                     mp_link = preference.get("init_point")
             except Exception as e:
                 print("Error creando MP para Bot:", str(e))
-                
+
+    # Notificaciones: avisar al ADMIN y al chofer asignado
+    cliente_nombre = "Cliente de WhatsApp"
+    try:
+        cli_res = supabase.table("clientes").select("nombre").eq("id", cliente_id).execute()
+        if cli_res.data:
+            cliente_nombre = cli_res.data[0]["nombre"]
+    except Exception:
+        pass
+
+    crear_notificacion(
+        "nuevo_pedido",
+        "🆕 Nuevo pedido (WhatsApp)",
+        f"{cliente_nombre} - ${total_calc or pedido.total:,.0f}",
+        "ADMIN",
+        nuevo_pedido_id,
+    )
+
+    if chofer_id:
+        try:
+            rol_res = supabase.table("usuarios").select("roles(nombre)").eq("id", chofer_id).execute()
+            rol_chofer = rol_res.data[0]["roles"]["nombre"] if rol_res.data else None
+        except Exception:
+            rol_chofer = None
+        if rol_chofer:
+            crear_notificacion(
+                "nuevo_pedido",
+                "🆕 Nuevo pedido asignado",
+                f"{cliente_nombre} - ${total_calc or pedido.total:,.0f}",
+                rol_chofer,
+                nuevo_pedido_id,
+            )
+
     return {"message": "Pedido guardado", "pedido_id": nuevo_pedido_id, "mp_link": mp_link}
 
 @router.post("/webhook/mercadopago")
@@ -403,7 +468,7 @@ def get_pedidos(current_user=Depends(get_current_user)):
     # Si es ADMIN, ve todos. Si es Chofer, ve solo los suyos.
     rol = current_user.get("roles", {}).get("nombre")
     
-    query = supabase.table("pedidos").select("*, clientes(nombre, direccion, telefono), localidades(nombre), detalle_pedidos(id, cantidad, precio_unitario, subtotal, productos(nombre))")
+    query = supabase.table("pedidos").select("*, clientes(nombre, direccion, telefono), localidades(nombre), detalle_pedidos(id, cantidad, precio_unitario, subtotal, productos(nombre, marca))")
     if rol != "ADMIN":
         query = query.eq("chofer_id", current_user["id"])
         
@@ -412,7 +477,25 @@ def get_pedidos(current_user=Depends(get_current_user)):
 
 @router.post("/{pedido_id}/estado")
 def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get_current_user)):
-    return supabase.table("pedidos").update({"estado": "En reparto"}).eq("id", pedido_id).execute().data
+    res = supabase.table("pedidos").update({"estado": "En reparto"}).eq("id", pedido_id).execute().data
+
+    # Notificar al ADMIN que el chofer comenzó el reparto
+    try:
+        pedido = supabase.table("pedidos").select("*, clientes(nombre)").eq("id", pedido_id).maybe_single().execute().data
+        if pedido:
+            chofer_nombre = current_user.get("nombre", "El chofer")
+            cliente_nombre = (pedido.get("clientes") or {}).get("nombre", "cliente")
+            crear_notificacion(
+                "pedido_en_reparto",
+                "🚚 Pedido en reparto",
+                f"{chofer_nombre} comenzó el reparto de {cliente_nombre}",
+                "ADMIN",
+                pedido_id,
+            )
+    except Exception as e:
+        print("Error notificando en reparto:", str(e))
+
+    return res
 
 
 def normalizar_metodo_pago(valor: str | None) -> str:
@@ -473,5 +556,22 @@ def entregar_pedido(pedido_id: str, update: PedidoStatusUpdate, current_user=Dep
         "usuario_id": current_user["id"],
         "descripcion": f"Venta Pedido #{pedido_id}"
     }).execute()
-        
+
+    # Notificar al ADMIN que el chofer entregó el pedido
+    try:
+        chofer_nombre = current_user.get("nombre", "El chofer")
+        cliente_nombre = "cliente"
+        cli_res = supabase.table("clientes").select("nombre").eq("id", pedido["cliente_id"]).execute()
+        if cli_res.data:
+            cliente_nombre = cli_res.data[0]["nombre"]
+        crear_notificacion(
+            "pedido_entregado",
+            "✅ Pedido entregado",
+            f"{chofer_nombre} entregó el pedido de {cliente_nombre} - ${pedido['total']:,.0f}",
+            "ADMIN",
+            pedido_id,
+        )
+    except Exception as e:
+        print("Error notificando entrega:", str(e))
+
     return {"message": "Pedido entregado y registrado exitosamente"}

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import LogoutButton from '@/components/auth/LogoutButton';
 import AccountSwitcher from '@/components/auth/AccountSwitcher';
+import NotificationBell from '@/components/layout/NotificationBell';
 import { useNotifications } from '@/context/NotificationContext';
 import { getUser } from '@/lib/session';
 
@@ -39,8 +40,13 @@ export default function Sidebar() {
   return (
     <aside className="hidden md:flex flex-col w-64 bg-white border-r border-gray-100 h-screen sticky top-0 shadow-sm z-10">
       <div className="p-6">
-        <h1 className="text-2xl font-black text-primary">Los 2 Hermanos</h1>
-        <p className="text-xs text-muted mt-1 uppercase tracking-wider font-bold">Admin Panel</p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-black text-primary">Los 2 Hermanos</h1>
+            <p className="text-xs text-muted mt-1 uppercase tracking-wider font-bold">Admin Panel</p>
+          </div>
+          <NotificationBell variant="sidebar" />
+        </div>
       </div>
       
       <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">

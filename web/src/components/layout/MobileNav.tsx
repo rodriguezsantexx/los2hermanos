@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useNotifications } from '@/context/NotificationContext';
+import NotificationBell from '@/components/layout/NotificationBell';
 import AccountSwitcher from '@/components/auth/AccountSwitcher';
 import { getUser, logoutActive } from '@/lib/session';
 
@@ -49,6 +50,11 @@ export default function MobileNav() {
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 z-50">
+      {/* Campana de notificaciones flotante (arriba a la derecha) */}
+      <div className="fixed right-4 top-4 z-[60]">
+        <NotificationBell variant="mobile" />
+      </div>
+
       {isMoreOpen && (
         <>
           <button

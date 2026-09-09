@@ -4,8 +4,8 @@ import { Fragment, useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { getToken, getUser, logoutActive } from "@/lib/session";
 
-type Producto = { id: string; nombre: string; precio: number; stock_actual: number };
-type Detalle = { producto: string; cantidad: number; precio: number };
+type Producto = { id: string; nombre: string; marca?: string; precio: number; stock_actual: number };
+type Detalle = { producto: string; marca?: string; cantidad: number; precio: number };
 type Cliente = { id: string; nombre: string; localidad_id: string; direccion?: string; localidades?: { nombre?: string } | null };
 type Localidad = { id: string; nombre: string };
 
@@ -130,6 +130,7 @@ function PedidosContent() {
               mp_preference_id: p.mp_preference_id,
               detalles: (p.detalle_pedidos || []).map((d: any) => ({
                 producto: d.productos?.nombre || "Producto",
+                marca: d.productos?.marca || "",
                 cantidad: d.cantidad,
                 precio: d.precio_unitario,
               })),
@@ -528,7 +529,10 @@ function PedidosContent() {
                           }`}
                         >
                           <div className="min-w-0 flex-1">
-                            <p className="font-bold leading-snug text-gray-900">{p.nombre}</p>
+                            <p className="font-bold leading-snug text-gray-900">
+                              {p.nombre}
+                              {p.marca ? ` (${p.marca})` : ""}
+                            </p>
                             <p className="text-xs text-muted">
                               ${p.precio.toLocaleString("es-AR")} · Stock: {p.stock_actual}
                             </p>
@@ -731,7 +735,10 @@ function PedidosContent() {
                       <ul className="space-y-1.5">
                         {pedido.detalles.map((d, idx) => (
                           <li key={idx} className="flex items-start justify-between gap-2 text-sm">
-                            <span className="min-w-0 text-gray-700">{d.producto} × {d.cantidad}</span>
+                            <span className="min-w-0 text-gray-700">
+                              {d.producto}
+                              {d.marca ? ` (${d.marca})` : ""} × {d.cantidad}
+                            </span>
                             <span className="shrink-0 font-semibold text-gray-900">${(d.precio * d.cantidad).toLocaleString("es-AR")}</span>
                           </li>
                         ))}

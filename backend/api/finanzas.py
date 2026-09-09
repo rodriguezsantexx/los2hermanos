@@ -8,6 +8,7 @@ from postgrest.exceptions import APIError
 from auth.dependencies import admin_required, get_current_user
 from database.connection import supabase
 from schemas.finanzas import CierreCajaCreate, GastoChoferCreate, MovimientoCajaCreate, PagoCreate
+from utils.notificaciones import crear_notificacion
 
 router = APIRouter()
 
@@ -145,6 +146,19 @@ def registrar_gasto(gasto: GastoChoferCreate, current_user=Depends(get_current_u
             "descripcion": f"{gasto.categoria}" + (f" - {gasto.descripcion}" if gasto.descripcion else ""),
         }
         result = supabase.table("movimientos_caja").insert(data).execute()
+
+        # Notificar al ADMIN que el chofer registró un gasto
+        try:
+            chofer_nombre = current_user.get("nombre", "El chofer")
+            crear_notificacion(
+                "gasto_registrado",
+                "⛽ Gasto registrado",
+                f"{chofer_nombre} registró un gasto de ${gasto.monto} ({gasto.categoria})",
+                "ADMIN",
+            )
+        except Exception as e:
+            print("Error notificando gasto:", str(e))
+
         return result.data[0]
     except APIError as error:
         raise HTTPException(status_code=400, detail=error.message)

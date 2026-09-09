@@ -13,7 +13,7 @@ type ApiPedido = {
   created_at?: string;
   clientes?: { nombre?: string; direccion?: string } | null;
   localidades?: { nombre?: string } | null;
-  detalle_pedidos?: { cantidad: number; productos?: { nombre?: string } | null }[];
+  detalle_pedidos?: { cantidad: number; productos?: { nombre?: string; marca?: string } | null }[];
 };
 
 type DriverOrder = ApiPedido & { cliente: string; localidad: string; direccion: string; detalle: string };
@@ -26,7 +26,7 @@ function normalize(pedido: ApiPedido): DriverOrder {
     direccion: pedido.clientes?.direccion || "",
     detalle:
       pedido.detalle_pedidos
-        ?.map((d) => `${d.productos?.nombre || "Producto"} × ${d.cantidad}`)
+        ?.map((d) => `${d.productos?.nombre || "Producto"}${d.productos?.marca ? ` (${d.productos.marca})` : ""} × ${d.cantidad}`)
         .join(" · ") || "Sin detalle",
   };
 }
