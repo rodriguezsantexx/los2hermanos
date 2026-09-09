@@ -96,16 +96,20 @@ app.post('/api/simulate-message', async (req: any, res: any) => {
 
         if (modoIa) {
             let replyText = await getAIResponse(telefono, mensaje);
+            console.log(`[DEBUG-SIM] Respuesta IA (cruda): ${replyText.substring(0, 500)}`);
             let imagesToSend: string[] = [];
 
             const photoRegex = /\[FOTO_([^\]]+)\]/g;
             let match;
             while ((match = photoRegex.exec(replyText)) !== null) {
                 const imgPath = match[1];
-                imagesToSend.push(`${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`);
+                const imgUrl = `${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`;
+                imagesToSend.push(imgUrl);
+                console.log(`[DEBUG-SIM] Imagen extraída: ${imgUrl}`);
             }
             // Eliminar todas las etiquetas del texto
             replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
+            console.log(`[DEBUG-SIM] Tags extraídos: ${imagesToSend.length} | Texto limpio: ${replyText.substring(0, 300)}`);
             
             // Intercepción de PEDIDO_CONFIRMADO (Simulador)
             if (replyText.includes('[PEDIDO_CONFIRMADO]')) {
@@ -700,15 +704,19 @@ async function connectToWhatsApp() {
 
                 // Obtener respuesta de la IA
                 let replyText = await getAIResponse(remoteJid, textMessage);
+                console.log(`[DEBUG] Respuesta IA (cruda): ${replyText.substring(0, 500)}`);
 
                 let imagesToSend: string[] = [];
                 const photoRegex = /\[FOTO_([^\]]+)\]/g;
                 let match;
                 while ((match = photoRegex.exec(replyText)) !== null) {
                     const imgPath = match[1];
-                    imagesToSend.push(`${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`);
+                    const imgUrl = `${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`;
+                    imagesToSend.push(imgUrl);
+                    console.log(`[DEBUG] Imagen extraída: ${imgUrl}`);
                 }
                 replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
+                console.log(`[DEBUG] Tags extraídos: ${imagesToSend.length} | Texto limpio: ${replyText.substring(0, 300)}`);
 
                 // Intercepción de PEDIDO_CONFIRMADO
                 if (replyText.includes('[PEDIDO_CONFIRMADO]')) {
@@ -739,7 +747,13 @@ async function connectToWhatsApp() {
 
                 // Enviar todas las imágenes al usuario
                 for (const imgUrl of imagesToSend) {
-                    await sock.sendMessage(remoteJid, { image: { url: imgUrl } });
+                    try {
+                        console.log(`[DEBUG] Enviando imagen: ${imgUrl}`);
+                        await sock.sendMessage(remoteJid, { image: { url: imgUrl } });
+                        console.log(`[DEBUG] Imagen enviada OK: ${imgUrl}`);
+                    } catch (imgErr) {
+                        console.error(`[ERROR] Fallo al enviar imagen ${imgUrl}:`, imgErr);
+                    }
                 }
                 
                 if (replyText) {
