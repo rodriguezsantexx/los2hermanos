@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useNotifications, type Notificacion } from "@/context/NotificationContext";
+import { getUser } from "@/lib/session";
 
 const ICONO_TIPO: Record<string, string> = {
   nuevo_pedido: "🆕",
@@ -51,11 +52,15 @@ export default function NotificationBell({ variant = "sidebar" }: { variant?: "s
 
   const irANotificacion = (n: Notificacion) => {
     setOpen(false);
-    if (n.pedido_id) {
-      router.push(`/pedidos?id=${n.pedido_id}`);
-    } else {
-      router.push("/pedidos");
-    }
+    // Redirigir a la página de pedidos según el rol del usuario activo.
+    const role = getUser()?.roles?.nombre;
+    const base =
+      role === "CHOFER_LA_FALDA"
+        ? "/chofer/la-falda/pedidos"
+        : role === "CHOFER_HUERTA_GRANDE"
+        ? "/chofer/huerta-grande/pedidos"
+        : "/pedidos";
+    router.push(n.pedido_id ? `${base}?id=${n.pedido_id}` : base);
   };
 
   const bellClase =

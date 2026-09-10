@@ -29,5 +29,6 @@ def crear_notificacion(
     except Exception as e:
         print("Error creando notificación:", str(e))
 
-    # Web Push nativo al celular (aunque la app esté cerrada)
-    enviar_push(titulo, mensaje, url or "/pedidos", destinatario_rol)
+    # Web Push nativo al celular (aunque la app esté cerrada).
+    # Si no se pasa url, enviar_push la calcula según el rol.
+    enviar_push(titulo, mensaje, url, destinatario_rol)
