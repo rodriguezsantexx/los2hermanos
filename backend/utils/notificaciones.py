@@ -1,4 +1,5 @@
 from database.connection import supabase
+from utils.push import enviar_push
 
 
 def crear_notificacion(
@@ -8,11 +9,13 @@ def crear_notificacion(
     destinatario_rol: str,
     pedido_id: str | None = None,
     destinatario_id: str | None = None,
+    url: str | None = None,
 ):
     """Inserta una notificación para un rol (o usuario) específico.
 
     Las notificaciones se consumen en tiempo real por el frontend vía
-    Supabase Realtime (tabla `notificaciones`).
+    Supabase Realtime (tabla `notificaciones`) y además se envía un
+    Web Push nativo al celular (bandeja de entrada) a los usuarios del rol.
     """
     try:
         supabase.table("notificaciones").insert({
@@ -25,3 +28,6 @@ def crear_notificacion(
         }).execute()
     except Exception as e:
         print("Error creando notificación:", str(e))
+
+    # Web Push nativo al celular (aunque la app esté cerrada)
+    enviar_push(titulo, mensaje, url or "/pedidos", destinatario_rol)

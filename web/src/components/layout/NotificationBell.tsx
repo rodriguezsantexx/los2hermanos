@@ -29,7 +29,7 @@ function tiempoRelativo(iso: string) {
 }
 
 export default function NotificationBell({ variant = "sidebar" }: { variant?: "sidebar" | "mobile" }) {
-  const { notificaciones, unreadNotificaciones, marcarNotificacionesLeidas } = useNotifications();
+  const { notificaciones, unreadNotificaciones, marcarNotificacionesLeidas, pushPermiso, solicitarPermisoPush } = useNotifications();
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
@@ -98,6 +98,21 @@ export default function NotificationBell({ variant = "sidebar" }: { variant?: "s
               </button>
             )}
           </div>
+
+          {pushPermiso === "default" && (
+            <div className="flex items-center justify-between gap-3 border-b border-amber-100 bg-amber-50 px-4 py-3">
+              <p className="text-xs font-medium text-amber-900">
+                📲 Activá las notificaciones para recibirlas en el celular aunque cierres la app.
+              </p>
+              <button
+                type="button"
+                onClick={solicitarPermisoPush}
+                className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-amber-600"
+              >
+                Activar
+              </button>
+            </div>
+          )}
 
           <div className="max-h-[60vh] overflow-y-auto">
             {notificaciones.length === 0 ? (

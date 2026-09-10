@@ -1,8 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getActiveSession } from '@/lib/session';
+import { getActiveSession, getToken } from '@/lib/session';
+import { API_URL } from '@/lib/api';
 
 export type Notificacion = {
   id: string;
@@ -23,6 +24,9 @@ type NotificationContextType = {
   notificaciones: Notificacion[];
   unreadNotificaciones: number;
   marcarNotificacionesLeidas: () => void;
+  // Web Push nativo al celular
+  pushPermiso: NotificationPermission;
+  solicitarPermisoPush: () => Promise<void>;
 };
 
 const NotificationContext = createContext<NotificationContextType>({
@@ -32,6 +36,8 @@ const NotificationContext = createContext<NotificationContextType>({
   notificaciones: [],
   unreadNotificaciones: 0,
   marcarNotificacionesLeidas: () => {},
+  pushPermiso: "default",
+  solicitarPermisoPush: async () => {},
 });
 
 export const useNotifications = () => useContext(NotificationContext);
@@ -45,10 +51,76 @@ function getRolActivo(): string | null {
   }
 }
 
+/** Convierte una clave pública VAPID (base64url) a Uint8Array para pushManager. */
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [unreadChats, setUnreadChats] = useState<string[]>([]);
   const [lastReadMap, setLastReadMap] = useState<Record<string, number>>({});
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
+  const [pushPermiso, setPushPermiso] = useState<NotificationPermission>("default");
+  const lastPushUserRef = useRef<string | null>(null);
+
+  // ─── Web Push: registrar la suscripción del navegador ────────────────────
+  const registrarPush = async () => {
+    try {
+      if (typeof window === "undefined") return;
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+      const token = getToken();
+      if (!token) return;
+      const reg = await navigator.serviceWorker.ready;
+      const res = await fetch(`${API_URL}/api/notificaciones/vapid-public-key`);
+      if (!res.ok) return;
+      const { public_key } = await res.json();
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(public_key),
+      });
+      await fetch(`${API_URL}/api/notificaciones/suscripcion`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(sub.toJSON()),
+      });
+    } catch (e) {
+      console.error("Error registrando push:", e);
+    }
+  };
+
+  const solicitarPermisoPush = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    const permiso = await Notification.requestPermission();
+    setPushPermiso(permiso);
+    if (permiso === "granted") await registrarPush();
+  };
+
+  // Si ya hay permiso, registrar la suscripción (y re-registrar al cambiar de cuenta)
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    setPushPermiso(Notification.permission);
+    const check = () => {
+      const user = getActiveSession()?.user;
+      const uid = user?.id || null;
+      if (uid && uid !== lastPushUserRef.current && Notification.permission === "granted") {
+        lastPushUserRef.current = uid;
+        registrarPush();
+      }
+    };
+    check();
+    const interval = setInterval(check, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Cargar el historial de lectura al inicio
   useEffect(() => {
@@ -165,6 +237,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         notificaciones,
         unreadNotificaciones: notificaciones.filter(n => !n.leida).length,
         marcarNotificacionesLeidas,
+        pushPermiso,
+        solicitarPermisoPush,
       }}
     >
       {children}
