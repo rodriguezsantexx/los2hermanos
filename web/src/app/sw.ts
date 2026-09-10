@@ -50,7 +50,7 @@ self.addEventListener("push", (event) => {
   const options: NotificationOptions = {
     body: data.mensaje || "",
     icon: "/icons/icon-192x192.png",
-    badge: "/icons/icon-192x192.png",
+    badge: "/icons/badge-96x96.png",
     data: { url: data.url || "/" },
   };
   event.waitUntil(self.registration.showNotification(titulo, options));
