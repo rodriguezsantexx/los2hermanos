@@ -85,13 +85,20 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(public_key),
       });
+      // PushSubscription.toJSON() devuelve { endpoint, expirationTime, keys: { p256dh, auth } }.
+      // El backend espera { endpoint, p256dh, auth } aplanado.
+      const subJson = sub.toJSON();
       await fetch(`${API_URL}/api/notificaciones/suscripcion`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(sub.toJSON()),
+        body: JSON.stringify({
+          endpoint: subJson.endpoint,
+          p256dh: subJson.keys?.p256dh,
+          auth: subJson.keys?.auth,
+        }),
       });
     } catch (e) {
       console.error("Error registrando push:", e);

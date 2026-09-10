@@ -11,6 +11,8 @@
 
 const SESSIONS_KEY = "los2hermanos_sessions";
 const ACTIVE_KEY = "los2hermanos_active";
+// Última cuenta usada (persiste en localStorage para restaurarla al reabrir la app).
+const LAST_ACTIVE_KEY = "los2hermanos_last_active";
 
 // Claves del sistema anterior (una sola sesión). Se migran automáticamente.
 const LEGACY_TOKEN_KEY = "los2hermanos_access_token";
@@ -62,7 +64,22 @@ export function getAllSessions(): Record<string, StoredSession> {
 /** Username de la cuenta activa en ESTA pestaña. */
 export function getActiveUsername(): string | null {
   if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(ACTIVE_KEY);
+  const active = sessionStorage.getItem(ACTIVE_KEY);
+  if (active) return active;
+  // Al reabrir la app, sessionStorage se borra (es por pestaña). Restauramos
+  // la última cuenta usada desde localStorage para no pedir login de nuevo.
+  const all = getAllSessions();
+  const lastActive = localStorage.getItem(LAST_ACTIVE_KEY);
+  if (lastActive && all[lastActive]) {
+    sessionStorage.setItem(ACTIVE_KEY, lastActive);
+    return lastActive;
+  }
+  const first = Object.keys(all)[0];
+  if (first) {
+    sessionStorage.setItem(ACTIVE_KEY, first);
+    return first;
+  }
+  return null;
 }
 
 /** Sesión completa de la cuenta activa en esta pestaña. */
@@ -88,6 +105,7 @@ export function saveSession(username: string, session: StoredSession) {
   all[username] = session;
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(all));
   sessionStorage.setItem(ACTIVE_KEY, username);
+  localStorage.setItem(LAST_ACTIVE_KEY, username);
 }
 
 /** Cambia la cuenta activa de ESTA pestaña (sin borrar las demás). */
@@ -95,6 +113,7 @@ export function setActiveSession(username: string) {
   const all = getAllSessions();
   if (all[username]) {
     sessionStorage.setItem(ACTIVE_KEY, username);
+    localStorage.setItem(LAST_ACTIVE_KEY, username);
   }
 }
 
@@ -111,6 +130,9 @@ export function removeSession(username: string) {
 /** Cierra la sesión de la cuenta activa en esta pestaña. */
 export function logoutActive() {
   const username = getActiveUsername();
+    if (localStorage.getItem(LAST_ACTIVE_KEY) === username) {
+      localStorage.removeItem(LAST_ACTIVE_KEY);
+    }
   if (username) {
     removeSession(username);
   } else {
