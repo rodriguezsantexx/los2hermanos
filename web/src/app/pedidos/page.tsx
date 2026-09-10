@@ -59,6 +59,7 @@ function PedidosContent() {
   const [paso, setPaso] = useState(1);
   const [cliente, setCliente] = useState("");
   const [localidad, setLocalidad] = useState("");
+  const [localidadEntrega, setLocalidadEntrega] = useState("");
   const [carrito, setCarrito] = useState<Record<string, number>>({});
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [busquedaProducto, setBusquedaProducto] = useState("");
@@ -80,7 +81,7 @@ function PedidosContent() {
     filtro === "Todos" ? pedidos : pedidos.filter((p) => p.estado === filtro);
   const clienteSeleccionado = clientes.find((item) => item.id === cliente);
   const localidadId =
-    clienteSeleccionado?.localidad_id || localidad || localidades[0]?.id || "";
+    localidadEntrega || clienteSeleccionado?.localidad_id || localidades[0]?.id || "";
   const total = productos.reduce(
     (sum, item) => sum + (carrito[item.id] || 0) * item.precio,
     0
@@ -284,6 +285,7 @@ function PedidosContent() {
     setNuevoClienteNombre("");
     setNuevoClienteDireccion("");
     setDireccionEntrega("");
+    setLocalidadEntrega("");
     setModalAbierto(true);
   };
 
@@ -318,6 +320,7 @@ function PedidosContent() {
         localidades: localidades.find((l) => l.id === nuevo.localidad_id) || null,
       };
       setClientes((prev) => [...prev, nuevoConLocalidad]);
+      setLocalidadEntrega(nuevo.localidad_id);
       setCliente(nuevo.id);
       setDireccionEntrega(nuevoClienteDireccion.trim());
       setNuevoClienteNombre("");
@@ -481,6 +484,7 @@ function PedidosContent() {
                             type="button"
                             onClick={() => {
                               setCliente(c.id);
+                              setLocalidadEntrega(c.localidad_id);
                               setDireccionEntrega(c.direccion || "");
                               setPaso(2);
                             }}
@@ -565,6 +569,18 @@ function PedidosContent() {
 
               {paso === 3 && (
                 <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Ciudad</p>
+                    <select
+                      value={localidadEntrega}
+                      onChange={(e) => setLocalidadEntrega(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-gray-200 bg-gray-50 p-3"
+                    >
+                      {localidades.map((l) => (
+                        <option key={l.id} value={l.id}>{l.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700">Dirección de entrega</p>
                     <input

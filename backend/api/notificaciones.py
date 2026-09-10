@@ -26,14 +26,16 @@ def vapid_public_key():
 @router.post("/suscripcion")
 def guardar_suscripcion(sub: PushSubscriptionCreate, current_user=Depends(get_current_user)):
     """Guarda (o actualiza) la suscripción push del usuario autenticado."""
-    existing = (
+    # Nota: en supabase-py, .maybe_single().execute() devuelve None si no hay
+    # filas, así que usamos .limit(1) y manejamos el caso vacío.
+    res = (
         supabase.table("push_subscriptions")
         .select("id")
         .eq("endpoint", sub.endpoint)
-        .maybe_single()
+        .limit(1)
         .execute()
-        .data
     )
+    existing = (res.data or [None])[0] if res else None
     if existing:
         supabase.table("push_subscriptions").update({
             "p256dh": sub.p256dh,
