@@ -477,6 +477,15 @@ def get_pedidos(current_user=Depends(get_current_user)):
 
 @router.post("/{pedido_id}/estado")
 def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get_current_user)):
+    # Solo ADMIN o el Chofer asignado pueden marcar el pedido en reparto
+    pedido_res = supabase.table("pedidos").select("*").eq("id", pedido_id).execute()
+    if not pedido_res.data:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    pedido = pedido_res.data[0]
+    if current_user.get("roles", {}).get("nombre") != "ADMIN" and pedido["chofer_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="No tienes permiso para modificar este pedido")
+
     res = supabase.table("pedidos").update({"estado": "En reparto"}).eq("id", pedido_id).execute().data
 
     # Notificar al ADMIN que el chofer comenzó el reparto

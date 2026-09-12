@@ -157,7 +157,9 @@ function PedidosContent() {
       setCargandoProductos(false);
       return;
     }
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos`)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("No se pudieron cargar los productos"))))
       .then((data: Producto[]) => {
         setProductos(data);
@@ -169,8 +171,12 @@ function PedidosContent() {
   useEffect(() => {
     if (!puedeCrear) return;
     Promise.all([
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes`),
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/localidades`),
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }),
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/localidades`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }),
     ])
       .then(async ([clientesRes, localidadesRes]) => {
         if (!clientesRes.ok || !localidadesRes.ok)

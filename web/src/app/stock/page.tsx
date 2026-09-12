@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { getToken } from "@/lib/session";
 
 type Producto = {
   id: string;
@@ -49,8 +50,8 @@ export default function StockPage() {
       setError(null);
 
       const [productosRes, movimientosRes] = await Promise.all([
-        fetch(API_URL),
-        fetch(`${API_URL}/movimientos_stock?limit=12`),
+        fetch(API_URL, { headers: { Authorization: `Bearer ${getToken()}` } }),
+        fetch(`${API_URL}/movimientos_stock?limit=12`, { headers: { Authorization: `Bearer ${getToken()}` } }),
       ]);
 
       if (!productosRes.ok) throw new Error("Error al cargar productos");

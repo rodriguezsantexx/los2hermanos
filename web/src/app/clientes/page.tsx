@@ -94,12 +94,16 @@ export default function ClientesPage() {
       })
       .subscribe();
       
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/localidades`)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/localidades`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
       .then(res => res.json())
       .then((data: Localidad[]) => { setLocalidades(data); if (data[0]) setClienteForm(prev => ({ ...prev, localidad_id: data[0].id })); })
       .catch(() => undefined);
       
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos`)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
       .then(res => res.json())
       .then(setProductos)
       .catch(() => undefined);

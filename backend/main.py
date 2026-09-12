@@ -44,7 +44,12 @@ class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
 app.add_middleware(HTTPSRedirectMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # Solo orígenes conocidos: la web de producción y los entornos de desarrollo.
+    allow_origins=[
+        "https://los2hermanos.up.railway.app",
+        "http://localhost:3000",
+        "http://localhost:3005",
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

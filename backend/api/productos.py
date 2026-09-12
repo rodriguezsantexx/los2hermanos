@@ -7,12 +7,12 @@ from auth.dependencies import admin_required, get_current_user
 router = APIRouter()
 
 @router.get("/")
-def get_productos():
+def get_productos(current_user=Depends(get_current_user)):
     res = supabase.table("productos").select("*").order("nombre").execute()
     return res.data
 
 @router.get("/movimientos_stock")
-def get_movimientos_stock(limit: int = 20):
+def get_movimientos_stock(limit: int = 20, current_user=Depends(get_current_user)):
     res = (
         supabase.table("movimientos_stock")
         .select("id, producto_id, cantidad, tipo, motivo, fecha, productos(nombre)")
@@ -24,7 +24,7 @@ def get_movimientos_stock(limit: int = 20):
 
 
 @router.get("/alertas_stock")
-def get_alertas_stock():
+def get_alertas_stock(current_user=Depends(get_current_user)):
     res = (
         supabase.table("productos")
         .select("id, nombre, stock_actual, stock_minimo, unidad")
@@ -58,7 +58,7 @@ def get_alertas_stock():
 from postgrest.exceptions import APIError
 
 @router.post("/")
-def create_producto(producto: ProductoCreate): # Temporalmente libre para desarrollo frontend
+def create_producto(producto: ProductoCreate, current_user=Depends(admin_required)):
     try:
         res = supabase.table("productos").insert(producto.model_dump(mode='json')).execute()
         return res.data[0]
@@ -66,7 +66,7 @@ def create_producto(producto: ProductoCreate): # Temporalmente libre para desarr
         raise HTTPException(status_code=400, detail=e.message)
 
 @router.put("/{producto_id}")
-def update_producto(producto_id: str, producto: ProductoUpdate): # Temporalmente libre para desarrollo frontend
+def update_producto(producto_id: str, producto: ProductoUpdate, current_user=Depends(admin_required)):
     try:
         # Supabase's JSON client cannot serialize Decimal instances returned by
         # Pydantic; convert the payload to JSON-compatible values first.
@@ -86,7 +86,7 @@ def update_producto(producto_id: str, producto: ProductoUpdate): # Temporalmente
         raise HTTPException(status_code=400, detail=e.message)
 
 @router.delete("/{producto_id}")
-def delete_producto(producto_id: str):
+def delete_producto(producto_id: str, current_user=Depends(admin_required)):
     try:
         res = supabase.table("productos").delete().eq("id", producto_id).execute()
         if not res.data:
@@ -101,7 +101,7 @@ def delete_producto(producto_id: str):
         raise HTTPException(status_code=400, detail=e.message)
 
 @router.post("/{producto_id}/movimiento_stock")
-def ajustar_stock(producto_id: str, movimiento: StockMovimiento): # Temporalmente libre para desarrollo frontend
+def ajustar_stock(producto_id: str, movimiento: StockMovimiento, current_user=Depends(admin_required)):
     try:
         prod_res = supabase.table("productos").select("stock_actual").eq("id", producto_id).execute()
         if not prod_res.data:

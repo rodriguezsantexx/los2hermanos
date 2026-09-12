@@ -71,8 +71,12 @@ export default function WhatsappChat() {
     try {
       // 1. Obtener productos y localidades
       const [prodRes, locRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos`),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/localidades`)
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/productos`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/localidades`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        })
       ]);
       const productos = await prodRes.json();
       const localidades = await locRes.json();
