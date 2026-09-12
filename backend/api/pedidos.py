@@ -276,9 +276,11 @@ def create_pedido_bot(pedido: PedidoBot):
                     "pedido_id": nuevo_pedido_id
                 }).execute()
         
-    # 6. Mercado Pago (solo cuando el cliente elige MercadoPago, no Transferencia)
+    # 6. Mercado Pago: se genera la preferencia para Transferencia y MercadoPago
+    # (el chofer muestra el QR al entregar), pero el link SOLO se devuelve al
+    # cliente cuando eligió MercadoPago (en Transferencia no se le envía link).
     mp_link = None
-    if "mercado pago" in pedido.metodo_pago.lower() and mp_sdk:
+    if ("transferencia" in pedido.metodo_pago.lower() or "mercado pago" in pedido.metodo_pago.lower()) and mp_sdk:
         try:
             preference_data = {
                 "items": [
@@ -294,11 +296,13 @@ def create_pedido_bot(pedido: PedidoBot):
             preference_response = mp_sdk.preference().create(preference_data)
             preference = preference_response["response"]
             if "id" in preference:
-                mp_link = preference.get("init_point")
+                link = preference.get("init_point")
                 supabase.table("pedidos").update({
                     "mp_preference_id": preference["id"],
-                    "mp_link": mp_link
+                    "mp_link": link
                 }).eq("id", nuevo_pedido_id).execute()
+                if "mercado pago" in pedido.metodo_pago.lower():
+                    mp_link = link
         except Exception as e:
             print("Error creando MP para Bot:", str(e))
 

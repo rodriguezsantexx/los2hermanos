@@ -129,7 +129,12 @@ app.post('/api/simulate-message', async (req: any, res: any) => {
                     if (backendData.mp_link) {
                         replyText = `¡Pedido confirmado y guardado! 🚀\n\nPodés abonarlo acá:\n👉 ${backendData.mp_link}`;
                     } else {
-                        replyText = `¡Pedido confirmado y guardado exitosamente! 🚀`;
+                        const metodoPago = (pedidoData.metodo_pago || "").toLowerCase();
+                        if (metodoPago.includes("transferencia")) {
+                            replyText = `¡Pedido confirmado y guardado! 🚀\n\nEl chofer llevará un código QR para que puedas abonar con transferencia en el momento de la entrega.`;
+                        } else {
+                            replyText = `¡Pedido confirmado y guardado exitosamente! 🚀`;
+                        }
                     }
                 } catch (e) {
                     replyText = "Error al confirmar el pedido. Intentá de nuevo.";
@@ -266,7 +271,7 @@ app.post('/api/extract-order', async (req: any, res: any) => {
 No incluyas markdown, solo JSON válido.
 Estructura deseada:
 {
-  "direccion": "Calle y número exacto extraído de la conversación. Si no hay, dejar vacío",
+  "direccion": "Calle y número si existe, extraído de la conversación. Si la casa no tiene número, anotar solo la calle. Si no hay dirección, dejar vacío",
   "localidad_id": "Compara la localidad mencionada y elige el ID correcto de esta lista (ignora mayusculas/minusculas). Lista: ${JSON.stringify(localidades_disponibles)}. Si no menciona ninguna o no coincide, dejar vacío",
   "metodo_pago": "Efectivo o Transferencia. Por defecto Efectivo si no dice nada.",
   "detalles": [
@@ -429,12 +434,12 @@ ${productosTexto}
 *FLUJO ESTRICTO DE VENTAS (Debes seguir este orden sin saltarte pasos):*
 1. **PRODUCTOS:** Identifica qué productos quiere el cliente. SIEMPRE debes saludar primero. Si en su primer mensaje ya pide un producto (ej: "hola quiero una garrafa de 15 extragas"), salúdalo cortésmente y EN OTRO MENSAJE (separado por |||) avanza inmediatamente al paso 2.
 2. **UBICACIÓN:** Una vez que sabes qué productos quiere, pregúntale: "¿Sería para envío a domicilio o retirás por el local?"
-   - Si elige envío, pídele la dirección usando EXACTAMENTE este texto: "Dale. Para poder confirmar el pedido, mandame la dirección completa (calle, número y localidad), un link de Google Maps o el pin de ubicación."
-   - IMPORTANTE SOBRE MAPAS/PINES: Si el cliente envía un link de Maps o un Pin pero NO escribe el nombre de la calle, DEBES preguntarle la calle y altura exacta (ej: "¿Me podrías escribir el nombre de la calle y el número para anotarlo en el ticket de envío?"). El ticket final NUNCA debe decir "dirección enviada" o "link", DEBE tener escrita la calle, el número y la localidad para tranquilidad del cliente.
+   - Si elige envío, pídele la dirección usando EXACTAMENTE este texto: "Dale. Para poder confirmar el pedido, mandame la dirección (calle y localidad), un link de Google Maps o el pin de ubicación."
+   - IMPORTANTE SOBRE MAPAS/PINES: Si el cliente envía un link de Maps o un Pin pero NO escribe el nombre de la calle, DEBES preguntarle el nombre de la calle (ej: "¿Me podrías escribir el nombre de la calle para anotarlo en el ticket de envío?"). El ticket final NUNCA debe decir "dirección enviada" o "link", DEBE tener escrita la calle y la localidad para tranquilidad del cliente. IMPORTANTE: Muchas casas NO tienen número de calle. Si el cliente da solo el nombre de la calle (o un punto de referencia), es una dirección VÁLIDA: anotá la calle sin número (ej: "Calle Los Aromos, La Falda"). NUNCA rechaces ni insistas en pedir un número si la casa no lo tiene.
    - Compara su ubicación con las zonas de envío permitidas. Si está fuera de zona, rechaza el pedido amablemente.
 3. **PAGO Y VUELTO:** Una vez confirmada una ubicación válida, pregúntale: "¿Abonás en efectivo o con transferencia (Mercado Pago)?"
    - Si dice **Efectivo**, es OBLIGATORIO preguntarle con qué billete va a pagar para calcular el vuelto.
-   - Si dice **Transferencia**, dile que el link de pago se le enviará en el resumen final.
+   - Si dice **Transferencia**, dile que el pago se realiza al recibir el pedido: el chofer llevará un código QR para que pueda abonar en el momento de la entrega.
 4. **TICKET FINAL:** Cuando tengas Productos + Ubicación Válida + Método de Pago completo, genera un resumen así:
    📋 *RESUMEN DE TU PEDIDO*
    - [Producto 1] ($Monto)
@@ -737,7 +742,12 @@ async function connectToWhatsApp() {
                         if (backendData.mp_link) {
                             replyText = `¡Pedido confirmado y guardado! 🚀\n\nPodés abonarlo escaneando o tocando el siguiente link de Mercado Pago:\n👉 ${backendData.mp_link}\n\nUna vez realizado, nuestro sistema lo detectará y el chofer saldrá para allá. ¡Muchas gracias!`;
                         } else {
-                            replyText = `¡Pedido confirmado y guardado exitosamente! 🚀\n\nYa lo anoté en nuestro sistema y el chofer lo llevará a la brevedad. ¡Cualquier otra cosa que necesites, avisame!`;
+                            const metodoPago = (pedidoData.metodo_pago || "").toLowerCase();
+                            if (metodoPago.includes("transferencia")) {
+                                replyText = `¡Pedido confirmado y guardado! 🚀\n\nEl chofer llevará un código QR para que puedas abonar con transferencia en el momento de la entrega. ¡Gracias por elegir Los 2 Hermanos!`;
+                            } else {
+                                replyText = `¡Pedido confirmado y guardado exitosamente! 🚀\n\nYa lo anoté en nuestro sistema y el chofer lo llevará a la brevedad. ¡Cualquier otra cosa que necesites, avisame!`;
+                            }
                         }
                     } catch (e) {
                         console.error("Error parseando o enviando pedido:", e);

@@ -135,13 +135,13 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
         </div>
       </div>
 
-      {pedido.metodo_pago === "MercadoPago" &&
+      {(pedido.metodo_pago === "MercadoPago" || pedido.metodo_pago === "Transferencia") &&
         !pedido.pago_verificado &&
         pedido.estado !== "Entregado" &&
         pedido.mp_link && (
           <div className="flex flex-col items-center gap-2 rounded-xl bg-sky-50 p-4">
             <p className="text-sm font-bold text-sky-700">
-              📱 Escaneá para pagar con Mercado Pago
+              📱 Escaneá para pagar
             </p>
             <QRCodeSVG value={pedido.mp_link} size={180} />
             <p className="text-center text-xs text-muted">
