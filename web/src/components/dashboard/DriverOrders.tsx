@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { apiFetch } from "@/lib/api";
 
 type ApiPedido = {
@@ -9,6 +10,7 @@ type ApiPedido = {
   estado: string;
   metodo_pago?: string;
   pago_verificado?: boolean;
+  mp_link?: string | null;
   clientes?: { nombre?: string; direccion?: string } | null;
   localidades?: { nombre?: string } | null;
   detalle_pedidos?: { cantidad: number; productos?: { nombre?: string; marca?: string } | null }[];
@@ -132,6 +134,21 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
           </p>
         </div>
       </div>
+
+      {pedido.metodo_pago === "MercadoPago" &&
+        !pedido.pago_verificado &&
+        pedido.estado !== "Entregado" &&
+        pedido.mp_link && (
+          <div className="flex flex-col items-center gap-2 rounded-xl bg-sky-50 p-4">
+            <p className="text-sm font-bold text-sky-700">
+              📱 Escaneá para pagar con Mercado Pago
+            </p>
+            <QRCodeSVG value={pedido.mp_link} size={180} />
+            <p className="text-center text-xs text-muted">
+              El cliente escanea el QR y paga al instante. El pago se verifica solo.
+            </p>
+          </div>
+        )}
 
       {pedido.estado !== "Entregado" &&
         pedido.estado !== "Cancelado" && (
