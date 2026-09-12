@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getToken, getUser, logoutActive } from "@/lib/session";
 
 type Producto = { id: string; nombre: string; marca?: string; precio: number; stock_actual: number };
@@ -55,6 +55,7 @@ const infoPago = (pago: string) => {
 
 function PedidosContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [filtro, setFiltro] = useState("Todos");
   const [pedidos, setPedidos] = useState<PedidoUI[]>(pedidosIniciales);
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -96,6 +97,9 @@ function PedidosContent() {
   );
   const puedeContinuar =
     paso === 1 ? !!cliente : Object.keys(carrito).length > 0;
+
+  const action = searchParams.get("action");
+  const targetId = searchParams.get("id");
 
   useEffect(() => {
     try {
@@ -142,9 +146,7 @@ function PedidosContent() {
             }));
             setPedidos(pedidosFormateados);
 
-            const targetId = searchParams.get("id");
             if (targetId) setPedidoAbierto(targetId);
-            const action = searchParams.get("action");
             if (action === "new") setModalAbierto(true);
           }
         })
@@ -154,7 +156,7 @@ function PedidosContent() {
     fetchPedidos();
 
     (window as any).refreshPedidos = fetchPedidos;
-  }, [searchParams]);
+  }, [action, targetId]);
 
   useEffect(() => {
     if (!puedeCrear) {
@@ -254,6 +256,12 @@ function PedidosContent() {
       setCarrito({});
       setTipoPedido("Envío");
       setPago("A confirmar");
+
+      // Si venimos de /pedidos?action=new, limpiar la URL para que el
+      // useEffect no reabra el modal de nuevo pedido.
+      if (searchParams.get("action") === "new") {
+        router.replace("/pedidos", { scroll: false });
+      }
 
       const responseData = await res.json();
       if (responseData.mp_link) {
