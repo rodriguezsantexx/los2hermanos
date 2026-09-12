@@ -127,7 +127,7 @@ function PedidosContent() {
               uuid: p.id,
               id: `#${p.id.substring(0, 4).toUpperCase()}`,
               cliente: p.clientes?.nombre || "Desconocido",
-              direccion: p.clientes?.direccion || "Sin dirección",
+              direccion: p.direccion || p.clientes?.direccion || "Sin dirección",
               localidad: p.localidades?.nombre || "Sin localidad",
               tipo: p.tipo_pedido || "Envío",
               total: `$${p.total}`,
@@ -221,6 +221,7 @@ function PedidosContent() {
       metodo_pago: pago === "A confirmar" ? null : pago,
       tipo_pedido: tipoPedido,
       detalles: detallesFinales,
+      direccion: direccionEntrega.trim() || clienteSeleccionado?.direccion || null,
     };
 
     try {

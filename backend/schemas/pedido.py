@@ -14,6 +14,7 @@ class PedidoCreate(BaseModel):
     metodo_pago: Optional[str] = None
     tipo_pedido: Optional[str] = "Envío"
     observaciones: Optional[str] = None
+    direccion: Optional[str] = None
 
 class PedidoStatusUpdate(BaseModel):
     estado: str

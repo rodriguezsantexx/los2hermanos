@@ -11,6 +11,7 @@ type ApiPedido = {
   metodo_pago?: string;
   pago_verificado?: boolean;
   mp_link?: string | null;
+  direccion?: string | null;
   clientes?: { nombre?: string; direccion?: string } | null;
   localidades?: { nombre?: string } | null;
   detalle_pedidos?: { cantidad: number; productos?: { nombre?: string; marca?: string } | null }[];
@@ -23,7 +24,7 @@ function normalize(pedido: ApiPedido): DriverOrder {
     ...pedido,
     cliente: pedido.clientes?.nombre || "Cliente sin nombre",
     localidad: pedido.localidades?.nombre || "Sin localidad",
-    direccion: pedido.clientes?.direccion || "",
+    direccion: pedido.direccion || pedido.clientes?.direccion || "",
     detalle:
       pedido.detalle_pedidos
         ?.map(

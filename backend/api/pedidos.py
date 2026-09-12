@@ -78,7 +78,8 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
         "estado": "Asignado" if chofer_id else ("Pendiente" if pedido.tipo_pedido != "Local" else "Pendiente"),
         "tipo_pedido": pedido.tipo_pedido,
         "metodo_pago": pedido.metodo_pago,
-        "observaciones": pedido.observaciones
+        "observaciones": pedido.observaciones,
+        "direccion": pedido.direccion
     }
     
     nuevo_pedido_res = supabase.table("pedidos").insert(pedido_data).execute()
@@ -223,6 +224,16 @@ def create_pedido_bot(pedido: PedidoBot):
                 chofer_res = supabase.table("usuarios").select("id").eq("rol_id", rol_res.data[0]["id"]).execute()
                 chofer_id = chofer_res.data[0]["id"] if chofer_res.data else None
     
+    # 2b. Actualizar dirección y localidad del cliente (puede pedir a otra dirección)
+    if pedido.direccion:
+        try:
+            supabase.table("clientes").update({
+                "direccion": pedido.direccion,
+                "localidad_id": localidad_id
+            }).eq("id", cliente_id).execute()
+        except Exception as e:
+            print("Error actualizando dirección del cliente:", str(e))
+    
     # 3. Calcular detalles buscando productos por nombre aproximado
     detalles = []
     total_calc = 0
@@ -249,7 +260,8 @@ def create_pedido_bot(pedido: PedidoBot):
         "estado": "Asignado" if chofer_id else "Pendiente",
         "tipo_pedido": pedido.modalidad,
         "metodo_pago": pedido.metodo_pago,
-        "observaciones": "Creado por Bot WhatsApp"
+        "observaciones": "Creado por Bot WhatsApp",
+        "direccion": pedido.direccion
     }
     
     nuevo_pedido_res = supabase.table("pedidos").insert(pedido_data).execute()
@@ -550,7 +562,7 @@ def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get
             bot_url = os.getenv("BOT_URL")
             if telefono and bot_url and estado_anterior != "En reparto":
                 try:
-                    telefono_jid = telefono if telefono.endswith("@s.whatsapp.net") else f"{telefono}@s.whatsapp.net"
+                    telefono_jid = telefono if "@" in telefono else f"{telefono}@s.whatsapp.net"
                     requests.post(
                         f"{bot_url}/api/send-message",
                         json={
