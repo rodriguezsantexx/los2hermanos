@@ -603,6 +603,7 @@ function PedidosContent() {
                       {[
                         { clave: "Efectivo", icono: "💵" },
                         { clave: "Transferencia", icono: "🏦" },
+                        { clave: "MercadoPago", icono: "📱" },
                         { clave: "A confirmar", icono: "⏳" },
                       ].map((m) => (
                         <button

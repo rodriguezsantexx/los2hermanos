@@ -109,7 +109,8 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
         }).execute()
         
     mp_link = None
-    if pedido.metodo_pago in ["Transferencia", "MercadoPago"] and mp_sdk:
+    # Solo se genera link de pago cuando el cliente elige MercadoPago (no Transferencia)
+    if pedido.metodo_pago == "MercadoPago" and mp_sdk:
         try:
             preference_data = {
                 "items": [
@@ -272,29 +273,28 @@ def create_pedido_bot(pedido: PedidoBot):
                     "pedido_id": nuevo_pedido_id
                 }).execute()
         
-    # 6. Mercado Pago
+    # 6. Mercado Pago (solo cuando el cliente elige MercadoPago, no Transferencia)
     mp_link = None
-    if "transferencia" in pedido.metodo_pago.lower() or "mercado pago" in pedido.metodo_pago.lower():
-        if mp_sdk:
-            try:
-                preference_data = {
-                    "items": [
-                        {
-                            "title": "Pedido WhatsApp Los 2 Hermanos",
-                            "quantity": 1,
-                            "unit_price": float(total_calc or pedido.total)
-                        }
-                    ],
-                    "external_reference": nuevo_pedido_id,
-                    "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago", 
-                }
-                preference_response = mp_sdk.preference().create(preference_data)
-                preference = preference_response["response"]
-                if "id" in preference:
-                    supabase.table("pedidos").update({"mp_preference_id": preference["id"]}).eq("id", nuevo_pedido_id).execute()
-                    mp_link = preference.get("init_point")
-            except Exception as e:
-                print("Error creando MP para Bot:", str(e))
+    if "mercado pago" in pedido.metodo_pago.lower() and mp_sdk:
+        try:
+            preference_data = {
+                "items": [
+                    {
+                        "title": "Pedido WhatsApp Los 2 Hermanos",
+                        "quantity": 1,
+                        "unit_price": float(total_calc or pedido.total)
+                    }
+                ],
+                "external_reference": nuevo_pedido_id,
+                "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago", 
+            }
+            preference_response = mp_sdk.preference().create(preference_data)
+            preference = preference_response["response"]
+            if "id" in preference:
+                supabase.table("pedidos").update({"mp_preference_id": preference["id"]}).eq("id", nuevo_pedido_id).execute()
+                mp_link = preference.get("init_point")
+        except Exception as e:
+            print("Error creando MP para Bot:", str(e))
 
     # Notificaciones: avisar al ADMIN y al chofer asignado
     cliente_nombre = "Cliente de WhatsApp"
@@ -452,12 +452,15 @@ def aplicar_pago_aprobado(pedido_id: str, payment: dict) -> "_ProcesoPago":
         }).execute()
 
     # Registro contable: movimiento de caja (Ingreso)
-    supabase.table("movimientos_caja").insert({
-        "tipo": "Ingreso",
-        "monto": round(monto, 2),
-        "metodo_pago": "MercadoPago",
-        "descripcion": f"Cobro online MercadoPago - Pedido #{pedido_id}"
-    }).execute()
+    # Si el pedido ya fue ENTREGADO, el ingreso ya se registró en entregar_pedido
+    # (movimientos_caja "Venta Pedido #...") — no duplicar.
+    if pedido_row.get("estado") != "Entregado":
+        supabase.table("movimientos_caja").insert({
+            "tipo": "Ingreso",
+            "monto": round(monto, 2),
+            "metodo_pago": "MercadoPago",
+            "descripcion": f"Cobro online MercadoPago - Pedido #{pedido_id}"
+        }).execute()
 
     print(f"[MP-WEBHOOK] ✅ Pago {payment.get('id')} aplicado al pedido {pedido_id} "
           f"(ARS {round(monto, 2)}).")
@@ -557,14 +560,17 @@ def entregar_pedido(pedido_id: str, update: PedidoStatusUpdate, current_user=Dep
         "metodo_pago": metodo_pago
     }).execute()
     
-    # Registrar Caja (ingreso de plata real)
-    supabase.table("movimientos_caja").insert({
-        "tipo": "Ingreso",
-        "monto": pedido["total"],
-        "metodo_pago": metodo_pago,
-        "usuario_id": current_user["id"],
-        "descripcion": f"Venta Pedido #{pedido_id}"
-    }).execute()
+    # Registrar Caja (ingreso de plata real).
+    # Si el pago fue por MercadoPago y el webhook ya lo registró (pago_verificado),
+    # el ingreso ya está contabilizado en movimientos_caja — no duplicar.
+    if not (metodo_pago == "MercadoPago" and pedido.get("pago_verificado")):
+        supabase.table("movimientos_caja").insert({
+            "tipo": "Ingreso",
+            "monto": pedido["total"],
+            "metodo_pago": metodo_pago,
+            "usuario_id": current_user["id"],
+            "descripcion": f"Venta Pedido #{pedido_id}"
+        }).execute()
 
     # Notificar al ADMIN que el chofer entregó el pedido
     try:
