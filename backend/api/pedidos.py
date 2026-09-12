@@ -4,6 +4,7 @@ from typing import List
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
+import requests
 import mercadopago
 from database.connection import supabase
 from schemas.pedido import PedidoCreate, PedidoStatusUpdate
@@ -526,11 +527,12 @@ def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get
     if current_user.get("roles", {}).get("nombre") != "ADMIN" and pedido["chofer_id"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="No tienes permiso para modificar este pedido")
 
+    estado_anterior = pedido["estado"]
     res = supabase.table("pedidos").update({"estado": "En reparto"}).eq("id", pedido_id).execute().data
 
     # Notificar al ADMIN que el chofer comenzó el reparto
     try:
-        pedido = supabase.table("pedidos").select("*, clientes(nombre)").eq("id", pedido_id).maybe_single().execute().data
+        pedido = supabase.table("pedidos").select("*, clientes(nombre, telefono)").eq("id", pedido_id).maybe_single().execute().data
         if pedido:
             chofer_nombre = current_user.get("nombre", "El chofer")
             cliente_nombre = (pedido.get("clientes") or {}).get("nombre", "cliente")
@@ -541,6 +543,24 @@ def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get
                 "ADMIN",
                 pedido_id,
             )
+
+            # Avisar al cliente por WhatsApp que el chofer está en camino
+            # (solo la primera vez que el pedido pasa a En reparto)
+            telefono = (pedido.get("clientes") or {}).get("telefono")
+            bot_url = os.getenv("BOT_URL")
+            if telefono and bot_url and estado_anterior != "En reparto":
+                try:
+                    telefono_jid = telefono if telefono.endswith("@s.whatsapp.net") else f"{telefono}@s.whatsapp.net"
+                    requests.post(
+                        f"{bot_url}/api/send-message",
+                        json={
+                            "telefono": telefono_jid,
+                            "mensaje": f"🚚 ¡Hola {cliente_nombre}! Tu pedido está en camino. El chofer ya salió con tu pedido, estate atento/a que llega en breve. ¡Gracias por elegir Los 2 Hermanos!",
+                        },
+                        timeout=10,
+                    )
+                except Exception as exc:
+                    print("Error avisando al cliente por WhatsApp:", repr(exc))
     except Exception as e:
         print("Error notificando en reparto:", str(e))
 
