@@ -6,7 +6,7 @@ import { getToken, getUser, logoutActive } from "@/lib/session";
 
 type Producto = { id: string; nombre: string; marca?: string; precio: number; stock_actual: number };
 type Detalle = { producto: string; marca?: string; cantidad: number; precio: number };
-type Cliente = { id: string; nombre: string; localidad_id: string; direccion?: string; localidades?: { nombre?: string } | null };
+type Cliente = { id: string; nombre: string; localidad_id: string; direccion?: string; telefono?: string; localidades?: { nombre?: string } | null };
 type Localidad = { id: string; nombre: string };
 
 interface PedidoUI {
@@ -21,6 +21,8 @@ interface PedidoUI {
   pago: string;
   pago_verificado?: boolean;
   mp_preference_id?: string | null;
+  mp_link?: string | null;
+  telefono?: string;
   detalles: Detalle[];
 }
 
@@ -129,6 +131,8 @@ function PedidosContent() {
               pago: p.metodo_pago || "A confirmar",
               pago_verificado: p.pago_verificado,
               mp_preference_id: p.mp_preference_id,
+              mp_link: p.mp_link,
+              telefono: p.clientes?.telefono,
               detalles: (p.detalle_pedidos || []).map((d: any) => ({
                 producto: d.productos?.nombre || "Producto",
                 marca: d.productos?.marca || "",
@@ -253,7 +257,19 @@ function PedidosContent() {
 
       const responseData = await res.json();
       if (responseData.mp_link) {
-        if (window.confirm("Pedido creado exitosamente. ¿Deseas abrir el link de pago de MercadoPago ahora?")) {
+        const telefonoCliente = clienteSeleccionado?.telefono;
+        if (telefonoCliente && window.confirm("Pedido creado. ¿Enviar el link de pago por WhatsApp al cliente?")) {
+          await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/send-message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              telefono: telefonoCliente,
+              mensaje: `Hola ${clienteSeleccionado?.nombre || ""}! Tu pedido de Los 2 Hermanos está listo. Podés pagarlo acá: ${responseData.mp_link}`,
+            }),
+          });
+          alert("✅ Link de pago enviado por WhatsApp");
+        } else {
+          navigator.clipboard?.writeText(responseData.mp_link);
           window.open(responseData.mp_link, "_blank");
         }
       } else {
@@ -360,6 +376,34 @@ function PedidosContent() {
         if (typeof (window as any).refreshPedidos === "function") (window as any).refreshPedidos();
       })
       .catch((err) => alert(err instanceof Error ? err.message : "Error al marcar como entregado"));
+  };
+
+  const enviarLinkPago = async (pedido: PedidoUI) => {
+    if (!pedido.telefono) {
+      alert("El cliente no tiene teléfono cargado");
+      return;
+    }
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/pedidos/${pedido.uuid}/link-pago`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.detail || "No se pudo obtener el link de pago");
+      }
+      const data = await res.json();
+      await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/send-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telefono: pedido.telefono,
+          mensaje: `Hola ${pedido.cliente}! Podés pagar tu pedido de Los 2 Hermanos acá: ${data.mp_link}`,
+        }),
+      });
+      alert("✅ Link de pago enviado por WhatsApp");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al enviar el link de pago");
+    }
   };
 
   return (
@@ -783,6 +827,15 @@ function PedidosContent() {
                         ))}
                     </span>
                   </div>
+
+                  {pedido.pago === "MercadoPago" && !pedido.pago_verificado && pedido.estado !== "Entregado" && puedeCrear && (
+                    <button
+                      onClick={() => enviarLinkPago(pedido)}
+                      className="w-full rounded-xl bg-sky-100 py-3 font-bold text-sky-700 active:scale-95 transition-transform"
+                    >
+                      📱 Enviar link de pago por WhatsApp
+                    </button>
+                  )}
 
                   {pedido.estado !== "Entregado" && puedeCrear && (
                     <button

@@ -128,8 +128,11 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
             preference = preference_response["response"]
             
             if "id" in preference:
-                supabase.table("pedidos").update({"mp_preference_id": preference["id"]}).eq("id", nuevo_pedido_id).execute()
                 mp_link = preference.get("init_point")
+                supabase.table("pedidos").update({
+                    "mp_preference_id": preference["id"],
+                    "mp_link": mp_link
+                }).eq("id", nuevo_pedido_id).execute()
         except Exception as e:
             print("Error creando preferencia MP:", str(e))
 
@@ -291,8 +294,11 @@ def create_pedido_bot(pedido: PedidoBot):
             preference_response = mp_sdk.preference().create(preference_data)
             preference = preference_response["response"]
             if "id" in preference:
-                supabase.table("pedidos").update({"mp_preference_id": preference["id"]}).eq("id", nuevo_pedido_id).execute()
                 mp_link = preference.get("init_point")
+                supabase.table("pedidos").update({
+                    "mp_preference_id": preference["id"],
+                    "mp_link": mp_link
+                }).eq("id", nuevo_pedido_id).execute()
         except Exception as e:
             print("Error creando MP para Bot:", str(e))
 
@@ -477,6 +483,33 @@ def get_pedidos(current_user=Depends(get_current_user)):
         
     res = query.order("created_at", desc=True).execute()
     return res.data
+
+@router.get("/{pedido_id}/link-pago")
+def get_link_pago(pedido_id: str, current_user=Depends(get_current_user)):
+    """Devuelve el link de pago de Mercado Pago de un pedido.
+    Si no está guardado, lo recupera desde Mercado Pago usando la preferencia."""
+    pedido_res = supabase.table("pedidos").select("mp_link, mp_preference_id, chofer_id").eq("id", pedido_id).execute()
+    if not pedido_res.data:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    pedido = pedido_res.data[0]
+    if current_user.get("roles", {}).get("nombre") != "ADMIN" and pedido["chofer_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="No tienes permiso para ver este pedido")
+
+    if pedido.get("mp_link"):
+        return {"mp_link": pedido["mp_link"]}
+
+    if pedido.get("mp_preference_id") and mp_sdk:
+        try:
+            pref = mp_sdk.preference().get(pedido["mp_preference_id"])
+            link = (pref.get("response") or {}).get("init_point")
+            if link:
+                supabase.table("pedidos").update({"mp_link": link}).eq("id", pedido_id).execute()
+                return {"mp_link": link}
+        except Exception as e:
+            print("Error recuperando preferencia MP:", str(e))
+
+    raise HTTPException(status_code=404, detail="Este pedido no tiene link de pago")
 
 @router.post("/{pedido_id}/estado")
 def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get_current_user)):
