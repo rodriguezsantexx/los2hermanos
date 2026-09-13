@@ -111,13 +111,8 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
         }).execute()
         
     mp_link = None
-    # Camino 1: se genera link de pago para MercadoPago Y Transferencia.
-    # En Transferencia el cliente paga por el flujo de MP (elige "Transferencia"
-    # en el checkout y transfiere al alias/CVU de MP), así MP detecta el pago
-    # y dispara el webhook → verificación automática.
-    # El link se guarda (para el QR del chofer) pero SOLO se devuelve al
-    # cliente cuando eligió MercadoPago (en Transferencia no se le envía link).
-    if pedido.metodo_pago in ("MercadoPago", "Transferencia") and mp_sdk:
+    # Solo se genera link de pago cuando el cliente elige MercadoPago (no Transferencia)
+    if pedido.metodo_pago == "MercadoPago" and mp_sdk:
         try:
             preference_data = {
                 "items": [
@@ -129,17 +124,8 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
                 ],
                 "external_reference": nuevo_pedido_id,
                 # Usamos la URL pública configurada en .env o localhost por defecto
-                "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago",
+                "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago", 
             }
-            # Si el cliente eligió Transferencia, guiamos el checkout a ese medio
-            # (excluimos tarjetas para que pague por transferencia al alias de MP)
-            if pedido.metodo_pago == "Transferencia":
-                preference_data["payment_methods"] = {
-                    "excluded_payment_types": [
-                        {"id": "credit_card"},
-                        {"id": "debit_card"},
-                    ]
-                }
             preference_response = mp_sdk.preference().create(preference_data)
             preference = preference_response["response"]
             
@@ -149,9 +135,6 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
                     "mp_preference_id": preference["id"],
                     "mp_link": mp_link
                 }).eq("id", nuevo_pedido_id).execute()
-                # En Transferencia el link NO se devuelve (el chofer muestra el QR)
-                if pedido.metodo_pago == "Transferencia":
-                    mp_link = None
         except Exception as e:
             print("Error creando preferencia MP:", str(e))
 
@@ -309,9 +292,6 @@ def create_pedido_bot(pedido: PedidoBot):
     # 6. Mercado Pago: se genera la preferencia para Transferencia y MercadoPago
     # (el chofer muestra el QR al entregar), pero el link SOLO se devuelve al
     # cliente cuando eligió MercadoPago (en Transferencia no se le envía link).
-    # Camino 1: en Transferencia el cliente paga por el flujo de MP (elige
-    # "Transferencia" en el checkout y transfiere al alias/CVU de MP), así MP
-    # detecta el pago y dispara el webhook → verificación automática.
     mp_link = None
     if ("transferencia" in pedido.metodo_pago.lower() or "mercado pago" in pedido.metodo_pago.lower()) and mp_sdk:
         try:
@@ -324,17 +304,8 @@ def create_pedido_bot(pedido: PedidoBot):
                     }
                 ],
                 "external_reference": nuevo_pedido_id,
-                "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago",
+                "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago", 
             }
-            # Si el cliente eligió Transferencia, guiamos el checkout a ese medio
-            # (excluimos tarjetas para que pague por transferencia al alias de MP)
-            if "transferencia" in pedido.metodo_pago.lower():
-                preference_data["payment_methods"] = {
-                    "excluded_payment_types": [
-                        {"id": "credit_card"},
-                        {"id": "debit_card"},
-                    ]
-                }
             preference_response = mp_sdk.preference().create(preference_data)
             preference = preference_response["response"]
             if "id" in preference:
