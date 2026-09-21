@@ -147,7 +147,7 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
         🛒 {pedido.detalle}
       </div>
 
-      {pedido.direccion && (
+      {pedido.direccion && pedido.estado !== "Entregado" && (
         <a 
           href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pedido.direccion}, ${pedido.localidad}, Argentina`)}`}
           target="_blank"
@@ -234,7 +234,7 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
       )}
 
       <section className="grid grid-cols-2 gap-4">
-        <div className="card bg-primary text-white border-none shadow-md shadow-primary/20">
+        <div className="card !bg-primary text-white border-none shadow-md shadow-primary/20">
           <p className="text-sm font-medium text-white/80">Por entregar</p>
           <p className="mt-1 text-3xl font-black">
             {pedidosActivos.length}
