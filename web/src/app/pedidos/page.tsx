@@ -652,12 +652,12 @@ function PedidosContent() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700">Método de pago</p>
-                    <div className="mt-2 grid grid-cols-3 gap-2">
+                    <div className="mt-2 grid grid-cols-2 gap-2">
                       {[
                         { clave: "Efectivo", icono: "💵" },
                         { clave: "Transferencia", icono: "🏦" },
-                        { clave: "MercadoPago", icono: "📱" },
-                        { clave: "A confirmar", icono: "⏳" },
+                        
+                        
                       ].map((m) => (
                         <button
                           key={m.clave}
@@ -837,7 +837,7 @@ function PedidosContent() {
                     </span>
                   </div>
 
-                  {pedido.pago === "MercadoPago" && !pedido.pago_verificado && pedido.estado !== "Entregado" && puedeCrear && (
+                  {(pedido.pago === "MercadoPago" || pedido.pago === "Transferencia") && !pedido.pago_verificado && pedido.estado !== "Entregado" && puedeCrear && (
                     <button
                       onClick={() => enviarLinkPago(pedido)}
                       className="w-full rounded-xl bg-sky-100 py-3 font-bold text-sky-700 active:scale-95 transition-transform"

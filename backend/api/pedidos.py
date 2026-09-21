@@ -144,7 +144,7 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
         
     mp_link = None
     # Solo se genera link de pago cuando el cliente elige MercadoPago (no Transferencia)
-    if pedido.metodo_pago == "MercadoPago" and mp_sdk:
+    if pedido.metodo_pago in ("MercadoPago", "Transferencia") and mp_sdk:
         try:
             preference_data = {
                 "items": [
