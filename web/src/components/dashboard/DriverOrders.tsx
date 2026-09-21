@@ -17,6 +17,7 @@ type ApiPedido = {
   clientes?: { nombre?: string; direccion?: string } | null;
   localidades?: { nombre?: string } | null;
   detalle_pedidos?: { cantidad: number; productos?: { nombre?: string; marca?: string } | null }[];
+  updated_at?: string;
 };
 
 type DriverOrder = ApiPedido & { cliente: string; localidad: string; direccion: string; detalle: string };
@@ -112,9 +113,20 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
     pedidos.filter(
       (pedido) => pedido.estado !== "Entregado" && pedido.estado !== "Cancelado"
     ) ;
-  const pedidosEntregados = pedidos.filter(
-    (pedido) => pedido.estado === "Entregado"
-  );
+  const hoy = new Date().toDateString();
+  const pedidosEntregados = pedidos.filter((pedido) => {
+    if (pedido.estado !== "Entregado") return false;
+    if (!pedido.updated_at) return true;
+    return new Date(pedido.updated_at).toDateString() === hoy;
+  });
+
+  const efectivoARendir = pedidosEntregados
+    .filter(p => !p.metodo_pago || p.metodo_pago === "Efectivo")
+    .reduce((acc, p) => acc + (Number(p.total) || 0), 0);
+    
+  const pagosDigitales = pedidosEntregados
+    .filter(p => p.metodo_pago === "Transferencia" || p.metodo_pago === "MercadoPago")
+    .reduce((acc, p) => acc + (Number(p.total) || 0), 0);
 
   const CardOrden = ({ pedido }: { pedido: DriverOrder }) => (
     <article className="card !p-4 space-y-3">
@@ -131,11 +143,22 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
         <span className={estiloBadgeEstado(pedido.estado)}>{pedido.estado}</span>
       </div>
 
-      <div className="rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
+      <div className="rounded-xl bg-gray-50 p-3 text-sm text-gray-700 mb-3">
         🛒 {pedido.detalle}
       </div>
 
-      <div className="flex items-center justify-between">
+      {pedido.direccion && (
+        <a 
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${pedido.direccion}, ${pedido.localidad}, Argentina`)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 w-full rounded-xl bg-white border border-gray-200 p-3 text-sm font-bold text-gray-700 active:scale-95 transition-transform mb-3 shadow-sm"
+        >
+          📍 Abrir en Google Maps
+        </a>
+      )}
+
+      <div className="flex items-center justify-between text-sm">
         <div>
           <p className="text-xs text-muted">Total</p>
           <p className="text-xl font-black text-gray-900">
@@ -211,17 +234,29 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
       )}
 
       <section className="grid grid-cols-2 gap-4">
-        <div className="card">
-          <p className="text-sm text-muted">Por entregar</p>
-          <p className="mt-2 text-3xl font-black text-gray-900">
+        <div className="card bg-primary text-white border-none shadow-md shadow-primary/20">
+          <p className="text-sm font-medium text-white/80">Por entregar</p>
+          <p className="mt-1 text-3xl font-black">
             {pedidosActivos.length}
           </p>
         </div>
-        <div className="card">
+        <div className="card bg-white border-gray-100 shadow-sm">
           <p className="text-sm text-muted">Entregados hoy</p>
-          <p className="mt-2 text-3xl font-black text-gray-900">
+          <p className="mt-1 text-3xl font-black text-gray-900">
             {pedidosEntregados.length}
           </p>
+        </div>
+      </section>
+
+      <section className="card bg-emerald-50 border-emerald-100 p-5 shadow-sm">
+        <h3 className="text-xs font-bold text-emerald-800 uppercase tracking-wider mb-3">Resumen de Caja (Hoy)</h3>
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-emerald-700 font-bold">💵 Efectivo a rendir</span>
+          <span className="text-2xl font-black text-emerald-900">${efectivoARendir.toLocaleString('es-AR')}</span>
+        </div>
+        <div className="flex justify-between items-center text-sm pt-2 border-t border-emerald-200/50">
+          <span className="text-emerald-600/90 font-medium">📱 Pagos digitales</span>
+          <span className="font-bold text-emerald-700/90">${pagosDigitales.toLocaleString('es-AR')}</span>
         </div>
       </section>
 
