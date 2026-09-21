@@ -2,7 +2,9 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import Response
 from typing import List
 from dataclasses import dataclass
-from datetime import datetime, timezone
+
+from datetime import datetime, timezone, timedelta, time
+
 import os
 import requests
 import mercadopago
@@ -227,8 +229,27 @@ class PedidoBot(BaseModel):
     metodo_pago: str
     telefono: str
 
+
+def check_horario_abierto(tipo_pedido: str):
+    now_ar = datetime.now(timezone.utc) - timedelta(hours=3)
+    if now_ar.weekday() == 6: # Domingo
+        raise HTTPException(status_code=400, detail="CERRADO_DOMINGO")
+        
+    hora = now_ar.time()
+    
+    if tipo_pedido.lower() == "local":
+        if not (time(9, 0) <= hora <= time(21, 0)):
+            raise HTTPException(status_code=400, detail="CERRADO_DEPOSITO")
+    else:
+        # Reparto
+        if not ((time(9, 0) <= hora <= time(14, 0)) or (time(17, 0) <= hora <= time(20, 30))):
+            raise HTTPException(status_code=400, detail="CERRADO_REPARTO")
+
 @router.post("/bot")
+
 def create_pedido_bot(pedido: PedidoBot):
+    check_horario_abierto(pedido.tipo_pedido)
+
     # 1. Buscar o crear cliente
     cliente_res = supabase.table("clientes").select("id").eq("telefono", pedido.telefono).execute()
     cliente_id = None
