@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
 type ApiPedido = {
   id: string;
@@ -60,6 +61,21 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
   };
   useEffect(() => {
     cargar();
+
+    const channel = supabase
+      .channel("pedidos_chofer")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pedidos" },
+        () => {
+          cargar();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const enProceso = async (pedido: DriverOrder) => {

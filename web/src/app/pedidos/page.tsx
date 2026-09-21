@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getToken, getUser, logoutActive } from "@/lib/session";
+import { supabase } from "@/lib/supabase";
 
 type Producto = { id: string; nombre: string; marca?: string; precio: number; stock_actual: number };
 type Detalle = { producto: string; marca?: string; cantidad: number; precio: number };
@@ -155,7 +156,22 @@ function PedidosContent() {
 
     fetchPedidos();
 
+    const channel = supabase
+      .channel("pedidos_admin")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pedidos" },
+        () => {
+          fetchPedidos();
+        }
+      )
+      .subscribe();
+
     (window as any).refreshPedidos = fetchPedidos;
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [action, targetId]);
 
   useEffect(() => {
@@ -279,7 +295,7 @@ function PedidosContent() {
           alert("✅ Link de pago enviado por WhatsApp");
         } else {
           navigator.clipboard?.writeText(responseData.mp_link);
-          window.open(responseData.mp_link, "_blank");
+          alert("Pedido creado correctamente. (Link copiado al portapapeles)");
         }
       } else {
         alert("Pedido creado correctamente");
