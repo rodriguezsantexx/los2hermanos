@@ -15,6 +15,38 @@ router = APIRouter()
 
 mp_token = os.getenv("MERCADOPAGO_ACCESS_TOKEN")
 mp_sdk = mercadopago.SDK(mp_token) if mp_token else None
+mp_user_id = mp_token.split("-")[-1] if mp_token else None
+
+def crear_qr_instore(pedido_id: str, total: float, title: str) -> str:
+    if not mp_token or not mp_user_id: return None
+    url = f"https://api.mercadopago.com/instore/orders/qr/seller/collectors/{mp_user_id}/pos/DELIVERY/qrs"
+    data = {
+        "external_reference": str(pedido_id),
+        "title": title,
+        "description": f"Pedido #{pedido_id}",
+        "total_amount": float(total),
+        "items": [
+            {
+                "title": title,
+                "unit_price": float(total),
+                "quantity": 1,
+                "unit_measure": "unit",
+                "total_amount": float(total)
+            }
+        ],
+        "notification_url": f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/api/pedidos/webhook/mercadopago"
+    }
+    try:
+        r = requests.put(url, headers={"Authorization": f"Bearer {mp_token}"}, json=data)
+        if r.status_code in (200, 201):
+            return r.json().get("qr_data")
+        else:
+            print("Error Instore Order:", r.text)
+    except Exception as e:
+        print("Error request Instore Order:", e)
+    return None
+
+mp_sdk = mercadopago.SDK(mp_token) if mp_token else None
 
 @router.post("/")
 def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
@@ -131,10 +163,18 @@ def create_pedido(pedido: PedidoCreate, current_user=Depends(get_current_user)):
             
             if "id" in preference:
                 mp_link = preference.get("init_point")
-                supabase.table("pedidos").update({
+                
+                # Generar también el QR dinámico interoperable (Instore Orders)
+                mp_qr_data = crear_qr_instore(nuevo_pedido_id, total_calculado, "Pedido Los 2 Hermanos")
+                
+                update_data = {
                     "mp_preference_id": preference["id"],
                     "mp_link": mp_link
-                }).eq("id", nuevo_pedido_id).execute()
+                }
+                if mp_qr_data:
+                    update_data["mp_qr_data"] = mp_qr_data
+                    
+                supabase.table("pedidos").update(update_data).eq("id", nuevo_pedido_id).execute()
         except Exception as e:
             print("Error creando preferencia MP:", str(e))
 
@@ -310,10 +350,18 @@ def create_pedido_bot(pedido: PedidoBot):
             preference = preference_response["response"]
             if "id" in preference:
                 link = preference.get("init_point")
-                supabase.table("pedidos").update({
+                
+                # Generar también el QR dinámico interoperable
+                mp_qr_data = crear_qr_instore(nuevo_pedido_id, float(total_calc or pedido.total), "Pedido WhatsApp Los 2 Hermanos")
+                
+                update_data = {
                     "mp_preference_id": preference["id"],
                     "mp_link": link
-                }).eq("id", nuevo_pedido_id).execute()
+                }
+                if mp_qr_data:
+                    update_data["mp_qr_data"] = mp_qr_data
+                    
+                supabase.table("pedidos").update(update_data).eq("id", nuevo_pedido_id).execute()
                 if "mercado pago" in pedido.metodo_pago.lower():
                     mp_link = link
         except Exception as e:

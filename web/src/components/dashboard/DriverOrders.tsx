@@ -11,6 +11,7 @@ type ApiPedido = {
   metodo_pago?: string;
   pago_verificado?: boolean;
   mp_link?: string | null;
+  mp_qr_data?: string | null;
   direccion?: string | null;
   clientes?: { nombre?: string; direccion?: string } | null;
   localidades?: { nombre?: string } | null;
@@ -139,14 +140,16 @@ export default function DriverOrders({ localidad }: { localidad: string }) {
       {(pedido.metodo_pago === "MercadoPago" || pedido.metodo_pago === "Transferencia") &&
         !pedido.pago_verificado &&
         pedido.estado !== "Entregado" &&
-        pedido.mp_link && (
+        (pedido.mp_qr_data || pedido.mp_link) && (
           <div className="flex flex-col items-center gap-2 rounded-xl bg-sky-50 p-4">
             <p className="text-sm font-bold text-sky-700">
               📱 Escaneá para pagar
             </p>
-            <QRCodeSVG value={pedido.mp_link} size={180} />
+            <QRCodeSVG value={pedido.mp_qr_data || pedido.mp_link!} size={180} />
             <p className="text-center text-xs text-muted">
-              El cliente escanea el QR y paga al instante. El pago se verifica solo.
+              {pedido.mp_qr_data 
+                ? "QR Interoperable: Podés escanear con MODO, Ualá, o Mercado Pago."
+                : "El cliente escanea el QR y paga al instante. El pago se verifica solo."}
             </p>
           </div>
         )}

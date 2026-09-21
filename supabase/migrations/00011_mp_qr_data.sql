@@ -1,0 +1,1 @@
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS mp_qr_data TEXT;
