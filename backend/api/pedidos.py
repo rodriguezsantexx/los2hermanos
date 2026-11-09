@@ -863,8 +863,15 @@ def actualizar_estado(pedido_id: str, request: Request, current_user=Depends(get
             if telefono and bot_url and estado_anterior != "En reparto":
                 try:
                     telefono_jid = telefono if "@" in telefono else f"{telefono}@s.whatsapp.net"
+                    bot_headers = {}
+                    auth_hdr = request.headers.get("authorization")
+                    if auth_hdr:
+                        bot_headers["Authorization"] = auth_hdr
+                    if os.getenv("BOT_API_SECRET"):
+                        bot_headers["x-api-key"] = os.getenv("BOT_API_SECRET")
                     requests.post(
                         f"{bot_url}/api/send-message",
+                        headers=bot_headers,
                         json={
                             "telefono": telefono_jid,
                             "mensaje": f"🚚 ¡Hola {cliente_nombre}! Tu pedido está en camino. El chofer ya salió con tu pedido, estate atento/a que llega en breve. ¡Gracias por elegir Los 2 Hermanos!",
