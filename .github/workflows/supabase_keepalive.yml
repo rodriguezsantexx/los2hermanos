@@ -1,0 +1,34 @@
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    # Se ejecuta cada 3 días a las 10:00 UTC (evita la pausa de 7 días por inactividad)
+    - cron: '0 10 */3 * *'
+  workflow_dispatch: # Permite ejecutar manualmente desde GitHub Actions
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY || secrets.SUPABASE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::warning::Para activar el keep-alive automático, define los secrets SUPABASE_URL y SUPABASE_KEY en Settings -> Secrets and variables -> Actions de GitHub."
+            exit 0
+          fi
+
+          echo "Enviando ping de actividad a Supabase..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            "$SUPABASE_URL/rest/v1/productos?select=id&limit=1")
+
+          echo "HTTP Status recibido: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 300 ]; then
+            echo "✅ Supabase respondió correctamente. Temporizador de pausa reiniciado exitosamente."
+          else
+            echo "Respuesta HTTP $STATUS registrada en los servidores de Supabase."
+          fi
