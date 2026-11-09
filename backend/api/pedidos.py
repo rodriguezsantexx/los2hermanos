@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta, time
 
 import os
+import re
+import hmac
+import hashlib
 import requests
 import mercadopago
 from database.connection import supabase
@@ -222,11 +225,12 @@ class ProductoPedidoBot(BaseModel):
     
 class PedidoBot(BaseModel):
     productos: List[ProductoPedidoBot]
-    total: float
-    direccion: str
-    localidad: str
+    total: float = 0.0
+    direccion: str = ""
+    localidad: str = ""
     modalidad: str = "Delivery"
-    metodo_pago: str
+    tipo_pedido: str = None
+    metodo_pago: str = "Efectivo"
     telefono: str
 
 
@@ -245,18 +249,150 @@ def check_horario_abierto(tipo_pedido: str):
         if not ((time(9, 0) <= hora <= time(14, 0)) or (time(17, 0) <= hora <= time(20, 30))):
             raise HTTPException(status_code=400, detail="CERRADO_REPARTO")
 
+
+def extraer_numeros(texto: str) -> set:
+    """Extrae números enteros como strings (ej. '10', '15', '45') para contrastar pesos/capacidades."""
+    return set(re.findall(r'\b\d+\b', texto.lower()))
+
+
+def resolver_producto(nombre_buscado: str, catalogo: list):
+    """
+    Busca el producto coincidente en el catálogo activo de Supabase con validación de peso/número y detección de ambigüedad.
+    Retorna tupla: (producto_encontrado, lista_de_ambigüedades)
+    - Si encuentra 1 coincidencia inequívoca: (producto, [])
+    - Si hay ambigüedad entre 2 o más: (None, [prod1, prod2, ...])
+    - Si no encuentra nada: (None, [])
+    """
+    buscado_clean = nombre_buscado.strip().lower()
+    if not buscado_clean:
+        return None, []
+
+    numeros_buscados = extraer_numeros(buscado_clean)
+
+    # Filtrar candidatos cuyo número/peso NO entre en conflicto con el buscado (ej: 10kg no es 15kg)
+    candidatos_validos = []
+    for prod in catalogo:
+        nombre_prod = prod["nombre"].strip().lower()
+        numeros_prod = extraer_numeros(nombre_prod)
+        if numeros_buscados and numeros_prod and not (numeros_buscados & numeros_prod):
+            continue
+        candidatos_validos.append(prod)
+
+    # 1. Coincidencia exacta
+    for prod in candidatos_validos:
+        if prod["nombre"].strip().lower() == buscado_clean:
+            return prod, []
+
+    # 2. Coincidencia por subcadena
+    coincidencias_sub = []
+    for prod in candidatos_validos:
+        nombre_prod = prod["nombre"].strip().lower()
+        if nombre_prod in buscado_clean or buscado_clean in nombre_prod:
+            coincidencias_sub.append(prod)
+
+    if len(coincidencias_sub) == 1:
+        return coincidencias_sub[0], []
+    elif len(coincidencias_sub) > 1:
+        # Si el usuario especificó una marca en la búsqueda (ej: "ypf", "shell")
+        marcas_en_busqueda = [m for m in ["ypf", "shell", "extragas", "total"] if m in buscado_clean]
+        if marcas_en_busqueda:
+            filtrados_por_marca = [c for c in coincidencias_sub if any(m in c["nombre"].lower() or m in (c.get("marca") or "").lower() for m in marcas_en_busqueda)]
+            if len(filtrados_por_marca) == 1:
+                return filtrados_por_marca[0], []
+        # Si persiste la ambigüedad, no elegir al azar: devolver candidatos para preguntar
+        return None, coincidencias_sub
+
+    # 3. Coincidencia por tokens clave
+    stopwords = {"de", "y", "en", "el", "la", "los", "las", "un", "una", "kg", "kilos", "bolsa"}
+    tokens_buscados = {t for t in buscado_clean.replace("-", " ").replace("_", " ").split() if t not in stopwords and len(t) > 1}
+
+    scores = []
+    for prod in candidatos_validos:
+        tokens_prod = {t for t in prod["nombre"].lower().replace("-", " ").replace("_", " ").split() if t not in stopwords and len(t) > 1}
+        score = len(tokens_buscados.intersection(tokens_prod))
+        if score >= 2:
+            scores.append((score, prod))
+
+    if scores:
+        scores.sort(key=lambda x: x[0], reverse=True)
+        max_score = scores[0][0]
+        mejores = [prod for sc, prod in scores if sc == max_score]
+        if len(mejores) == 1:
+            return mejores[0], []
+        else:
+            return None, mejores
+
+    return None, []
+
+
 @router.post("/bot")
-
 def create_pedido_bot(pedido: PedidoBot):
-    check_horario_abierto(pedido.tipo_pedido)
+    tipo_op = pedido.tipo_pedido or pedido.modalidad or "Delivery"
+    check_horario_abierto(tipo_op)
 
-    # 1. Buscar o crear cliente
-    cliente_res = supabase.table("clientes").select("id").eq("telefono", pedido.telefono).execute()
+    # 0. Validar que vengan productos
+    if not pedido.productos:
+        raise HTTPException(status_code=400, detail="SIN_PRODUCTOS")
+
+    # Cargar catálogo activo de productos
+    prods_db = supabase.table("productos") \
+        .select("id, nombre, marca, precio, precio_retiro, stock_actual, estado") \
+        .eq("estado", "activo") \
+        .execute().data or []
+
+    es_retiro = tipo_op.strip().lower() in ["local", "retiro"]
+
+    detalles = []
+    total_calc = 0.0
+
+    for p in pedido.productos:
+        if p.cantidad <= 0:
+            raise HTTPException(status_code=400, detail=f"CANTIDAD_INVALIDA:{p.nombre}")
+
+        prod, opciones = resolver_producto(p.nombre, prods_db)
+        if not prod:
+            if opciones:
+                nombres_opc = [o["nombre"] for o in opciones[:3]]
+                print(f"[BOT-PEDIDO] ⚠️ Ambigüedad de producto para '{p.nombre}': {nombres_opc}")
+                raise HTTPException(status_code=400, detail=f"AMBIGUEDAD_PRODUCTO:{p.nombre}:{','.join(nombres_opc)}")
+            print(f"[BOT-PEDIDO] ❌ Producto no identificado en catálogo: '{p.nombre}'")
+            raise HTTPException(status_code=400, detail=f"PRODUCTO_NO_ENCONTRADO:{p.nombre}")
+
+        # Validar stock disponible preliminarmente
+        stock_actual = prod.get("stock_actual", 0)
+        if stock_actual < p.cantidad:
+            print(f"[BOT-PEDIDO] ⚠️ Stock insuficiente para '{prod['nombre']}' (Disp: {stock_actual}, Pedido: {p.cantidad})")
+            raise HTTPException(status_code=400, detail=f"STOCK_INSUFICIENTE:{prod['nombre']}:{stock_actual}")
+
+        # Precio unitario según modalidad (retiro o delivery)
+        if es_retiro and prod.get("precio_retiro") and float(prod["precio_retiro"]) > 0:
+            precio_unitario = float(prod["precio_retiro"])
+        else:
+            precio_unitario = float(prod["precio"])
+
+        sub = round(precio_unitario * p.cantidad, 2)
+        total_calc += sub
+
+        detalles.append({
+            "producto_id": prod["id"],
+            "cantidad": p.cantidad,
+            "precio_unitario": precio_unitario,
+            "subtotal": sub
+        })
+
+    if not detalles:
+        raise HTTPException(status_code=400, detail="SIN_PRODUCTOS")
+
+    total_calc = round(total_calc, 2)
+
+    # 1. Buscar o crear cliente (normalizando el teléfono sin @s.whatsapp.net)
+    tel_limpio = re.sub(r'[^0-9]', '', (pedido.telefono or '').split('@')[0]) or pedido.telefono
+    cliente_res = supabase.table("clientes").select("id").in_("telefono", [tel_limpio, pedido.telefono]).execute()
     cliente_id = None
     if not cliente_res.data:
         nuevo_cli = supabase.table("clientes").insert({
             "nombre": "Cliente de WhatsApp",
-            "telefono": pedido.telefono,
+            "telefono": tel_limpio,
             "direccion": pedido.direccion
         }).execute()
         cliente_id = nuevo_cli.data[0]["id"]
@@ -285,7 +421,7 @@ def create_pedido_bot(pedido: PedidoBot):
                 chofer_res = supabase.table("usuarios").select("id").eq("rol_id", rol_res.data[0]["id"]).execute()
                 chofer_id = chofer_res.data[0]["id"] if chofer_res.data else None
     
-    # 2b. Actualizar dirección y localidad del cliente (puede pedir a otra dirección)
+    # 2b. Actualizar dirección y localidad del cliente
     if pedido.direccion:
         try:
             supabase.table("clientes").update({
@@ -295,31 +431,14 @@ def create_pedido_bot(pedido: PedidoBot):
         except Exception as e:
             print("Error actualizando dirección del cliente:", str(e))
     
-    # 3. Calcular detalles buscando productos por nombre aproximado
-    detalles = []
-    total_calc = 0
-    for p in pedido.productos:
-        prod_res = supabase.table("productos").select("id, precio").ilike("nombre", f"%{p.nombre}%").execute()
-        if prod_res.data:
-            pid = prod_res.data[0]["id"]
-            precio = prod_res.data[0]["precio"]
-            sub = precio * p.cantidad
-            total_calc += sub
-            detalles.append({
-                "producto_id": pid,
-                "cantidad": p.cantidad,
-                "precio_unitario": precio,
-                "subtotal": sub
-            })
-            
-    # 4. Crear pedido principal
+    # 3. Crear pedido principal con total fidedigno
     pedido_data = {
         "cliente_id": cliente_id,
         "localidad_id": localidad_id,
         "chofer_id": chofer_id,
-        "total": total_calc or pedido.total,
+        "total": total_calc,
         "estado": "Asignado" if chofer_id else "Pendiente",
-        "tipo_pedido": pedido.modalidad,
+        "tipo_pedido": tipo_op,
         "metodo_pago": pedido.metodo_pago,
         "observaciones": "Creado por Bot WhatsApp",
         "direccion": pedido.direccion
@@ -328,27 +447,41 @@ def create_pedido_bot(pedido: PedidoBot):
     nuevo_pedido_res = supabase.table("pedidos").insert(pedido_data).execute()
     nuevo_pedido_id = nuevo_pedido_res.data[0]["id"]
     
-    # 5. Insertar detalles
+    # 4. Insertar detalles
     for det in detalles:
         det["pedido_id"] = nuevo_pedido_id
-    if detalles:
-        supabase.table("detalle_pedidos").insert(detalles).execute()
+    supabase.table("detalle_pedidos").insert(detalles).execute()
         
-        # Descontar stock
-        for det in detalles:
-            prod_res = supabase.table("productos").select("stock_actual").eq("id", det["producto_id"]).execute()
-            if prod_res.data:
-                nuevo_stock = prod_res.data[0]["stock_actual"] - det["cantidad"]
+    # 5. Descontar stock de forma atómica y registrar movimiento
+    for det in detalles:
+        descontado = False
+        try:
+            # Descuento atómico vía RPC en Postgres (WHERE stock_actual >= cantidad)
+            rpc_res = supabase.rpc("descontar_stock_atomico", {
+                "p_producto_id": det["producto_id"],
+                "p_cantidad": det["cantidad"]
+            }).execute()
+            descontado = bool(rpc_res.data)
+        except Exception as e:
+            # Fallback seguro condicional si la RPC aún no fue migrada
+            prod_row = supabase.table("productos").select("stock_actual").eq("id", det["producto_id"]).single().execute().data
+            if prod_row and prod_row.get("stock_actual", 0) >= det["cantidad"]:
+                nuevo_stock = prod_row["stock_actual"] - det["cantidad"]
                 supabase.table("productos").update({"stock_actual": nuevo_stock}).eq("id", det["producto_id"]).execute()
-                
-                # Registrar movimiento
-                supabase.table("movimientos_stock").insert({
-                    "producto_id": det["producto_id"],
-                    "cantidad": det["cantidad"],
-                    "tipo": "Salida",
-                    "motivo": f"Pedido WhatsApp #{nuevo_pedido_id}",
-                    "pedido_id": nuevo_pedido_id
-                }).execute()
+                descontado = True
+
+        if not descontado:
+            # Si entre la validación y el descuento se agotó el stock por concurrencia, revertir pedido
+            supabase.table("pedidos").delete().eq("id", nuevo_pedido_id).execute()
+            raise HTTPException(status_code=400, detail=f"STOCK_INSUFICIENTE:{det.get('producto_id', '')}:0")
+
+        supabase.table("movimientos_stock").insert({
+            "producto_id": det["producto_id"],
+            "cantidad": det["cantidad"],
+            "tipo": "Salida",
+            "motivo": f"Pedido WhatsApp #{nuevo_pedido_id}",
+            "pedido_id": nuevo_pedido_id
+        }).execute()
         
     # 6. Mercado Pago: se genera la preferencia para Transferencia y MercadoPago
     # (el chofer muestra el QR al entregar), pero el link SOLO se devuelve al
@@ -422,6 +555,61 @@ def create_pedido_bot(pedido: PedidoBot):
 
     return {"message": "Pedido guardado", "pedido_id": nuevo_pedido_id, "mp_link": mp_link}
 
+def verificar_firma_mercadopago(request: Request, data_id: str) -> bool:
+    """Valida criptográficamente la cabecera x-signature de Mercado Pago con HMAC-SHA256."""
+    secret = os.getenv("MP_WEBHOOK_SECRET")
+    is_prod = os.getenv("ENV", "development").lower() in ("production", "prod") or bool(os.getenv("RAILWAY_ENVIRONMENT"))
+
+    if not secret:
+        if is_prod:
+            print("[MP-WEBHOOK] ❌ CRÍTICO: MP_WEBHOOK_SECRET no configurado en producción. Rechazando webhook (fail-closed).")
+            return False
+        # En desarrollo local sin secreto, se avisa en logs y se permite probar
+        print("[MP-WEBHOOK] ⚠️ Modo desarrollo: MP_WEBHOOK_SECRET no configurado. Bypass temporal.")
+        return True
+
+    x_signature = request.headers.get("x-signature")
+    x_request_id = request.headers.get("x-request-id")
+
+    if not x_signature or not x_request_id:
+        print("[MP-WEBHOOK] ⚠️ Falta x-signature o x-request-id en headers")
+        return False
+
+    try:
+        # Parsear ts y v1 del header (ej: "ts=1700000000,v1=abcdef...")
+        parts = {}
+        for part in x_signature.split(","):
+            if "=" in part:
+                k, v = part.strip().split("=", 1)
+                parts[k] = v
+
+        ts = parts.get("ts")
+        v1 = parts.get("v1")
+
+        if not ts or not v1:
+            print("[MP-WEBHOOK] ⚠️ Formato inválido de x-signature")
+            return False
+
+        # Si data_id viene de query param request.query_params.get("data.id"), o el payment_id
+        data_id_val = request.query_params.get("data.id") or data_id or ""
+
+        # Plantilla oficial de validación de Mercado Pago: id:[data.id];request-id:[x-request-id];ts:[ts];
+        manifest = f"id:{data_id_val};request-id:{x_request_id};ts:{ts};"
+        computed_hash = hmac.new(
+            secret.encode("utf-8"),
+            manifest.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+
+        es_valido = hmac.compare_digest(computed_hash, v1)
+        if not es_valido:
+            print("[MP-WEBHOOK] ❌ Firma inválida de Mercado Pago (rechazada)")
+        return es_valido
+    except Exception as e:
+        print(f"[MP-WEBHOOK] Error validando firma MP: {e}")
+        return False
+
+
 @router.post("/webhook/mercadopago")
 async def webhook_mercadopago(request: Request):
     """
@@ -472,6 +660,10 @@ async def webhook_mercadopago(request: Request):
         # Ping inicial de verificación u otro evento irrelevante: responder ok.
         return Response(content=b'"ok"', media_type="application/json", status_code=200)
 
+    # Validar firma criptográfica x-signature si MP_WEBHOOK_SECRET está configurado
+    if not verificar_firma_mercadopago(request, str(payment_id)):
+        return Response(content=b'"invalid signature"', media_type="application/json", status_code=401)
+
     try:
         payment_info = mp_sdk.payment().get(str(int(payment_id))) \
             if mp_sdk else None
@@ -510,8 +702,7 @@ class _ProcesoPago:
 
 
 def aplicar_pago_aprobado(pedido_id: str, payment: dict) -> "_ProcesoPago":
-    """Concreta un pago aprobado: valida el pedido, evita duplicados y
-    registra el impacto financiero."""
+    """Concreta un pago aprobado de forma atómica y transaccional."""
     try:
         pedido_row = supabase.table("pedidos").select("*").eq("id", pedido_id).maybe_single().execute().data
     except Exception as exc:
@@ -522,18 +713,59 @@ def aplicar_pago_aprobado(pedido_id: str, payment: dict) -> "_ProcesoPago":
         print(f"[MP-WEBHOOK] Pedido {pedido_id} inexistente.")
         return _ProcesoPago(True, '"sin pedido vinculado"')
 
-    # Dedup: si ya estaba verificado, damos por hecho que ya se registró.
-    if pedido_row.get("pago_verificado"):
-        print(f"[MP-WEBHOOK] Pedido {pedido_id} YA verificada anteriormente. Skip.")
-        return _ProcesoPago(True, '"already processed"')
-
     monto = float(payment.get("transaction_amount") or pedido_row.get("total") or 0)
     cliente_id = pedido_row.get("cliente_id")
+    mp_payment_id = str(payment.get("id", ""))
 
-    # Marcar como verificado PRIMERO para reducir riesgo de carrera entre
-    # múltiples notificaciones simultáneas.
-    supabase.table("pedidos").update({"pago_verificado": True}) \
-        .eq("id", pedido_id).execute()
+    # 1. Intentar procesamiento transaccional en una sola función RPC en Postgres
+    try:
+        rpc_res = supabase.rpc("aplicar_pago_mp_transaccional", {
+            "p_pedido_id": pedido_id,
+            "p_cliente_id": cliente_id,
+            "p_monto": round(monto, 2),
+            "p_mp_payment_id": mp_payment_id
+        }).execute()
+
+        if rpc_res.data:
+            if rpc_res.data.get("success"):
+                print(f"[MP-WEBHOOK] ✅ Pago {mp_payment_id} aplicado transaccionalmente (RPC) al pedido {pedido_id} (ARS {round(monto, 2)}).")
+                return _ProcesoPago(True, '{"processed": true}')
+            elif rpc_res.data.get("reason") == "already_processed_or_not_found":
+                print(f"[MP-WEBHOOK] Pedido {pedido_id} YA verificado concurrentemente (RPC). Skip idempotente.")
+                return _ProcesoPago(True, '"already processed"')
+    except Exception as rpc_err:
+        print("[MP-WEBHOOK] RPC falló o no existe, usando fallback seguro:", repr(rpc_err))
+
+    # 2. Fallback seguro en Python:
+    # Dedup: si ya estaba verificado en la lectura previa, skip.
+    if pedido_row.get("pago_verificado"):
+        print(f"[MP-WEBHOOK] Pedido {pedido_id} YA verificado anteriormente. Skip.")
+        return _ProcesoPago(True, '"already processed"')
+
+    # Actualizar pago_verificado SOLO SI actualmente es False (candado a nivel Postgres)
+    try:
+        update_res = supabase.table("pedidos") \
+            .update({"pago_verificado": True}) \
+            .eq("id", pedido_id) \
+            .eq("pago_verificado", False) \
+            .execute()
+
+        if not update_res.data:
+            print(f"[MP-WEBHOOK] Pedido {pedido_id} YA verificado concurrentemente. Skip.")
+            return _ProcesoPago(True, '"already processed"')
+    except Exception as exc:
+        print("[MP-WEBHOOK] Error en update atómico:", repr(exc))
+        return _ProcesoPago(True, '"error update"')
+
+    # Doble candado en movimientos_caja para este payment_id específico:
+    if mp_payment_id:
+        mov_existente = supabase.table("movimientos_caja") \
+            .select("id") \
+            .ilike("descripcion", f"%#{mp_payment_id}%") \
+            .execute()
+        if mov_existente.data:
+            print(f"[MP-WEBHOOK] Movimiento de caja ya existe para payment #{mp_payment_id}. Skip.")
+            return _ProcesoPago(True, '"already processed"')
 
     # Registro contable: tabla pagos
     if cliente_id:
@@ -544,17 +776,16 @@ def aplicar_pago_aprobado(pedido_id: str, payment: dict) -> "_ProcesoPago":
         }).execute()
 
     # Registro contable: movimiento de caja (Ingreso)
-    # Si el pedido ya fue ENTREGADO, el ingreso ya se registró en entregar_pedido
-    # (movimientos_caja "Venta Pedido #...") — no duplicar.
+    # Si el pedido ya fue ENTREGADO, el ingreso ya se registró en entregar_pedido — no duplicar.
     if pedido_row.get("estado") != "Entregado":
         supabase.table("movimientos_caja").insert({
             "tipo": "Ingreso",
             "monto": round(monto, 2),
             "metodo_pago": "MercadoPago",
-            "descripcion": f"Cobro online MercadoPago - Pedido #{pedido_id}"
+            "descripcion": f"Cobro online MercadoPago #{mp_payment_id} - Pedido #{pedido_id}"
         }).execute()
 
-    print(f"[MP-WEBHOOK] ✅ Pago {payment.get('id')} aplicado al pedido {pedido_id} "
+    print(f"[MP-WEBHOOK] ✅ Pago {mp_payment_id} aplicado al pedido {pedido_id} "
           f"(ARS {round(monto, 2)}).")
     return _ProcesoPago(True, '{"processed": true}')
 

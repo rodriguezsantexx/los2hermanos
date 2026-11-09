@@ -58,7 +58,10 @@ export default function WhatsappChat() {
     // Le pegamos al servidor Express del bot (que escucha en el puerto 3005)
     await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/send-message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`
+      },
       body: JSON.stringify({ telefono: selectedChat.telefono, mensaje: text })
     });
   };
@@ -84,7 +87,10 @@ export default function WhatsappChat() {
       // 2. Extraer pedido
       const extractRes = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/extract-order`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${getToken()}`
+        },
         body: JSON.stringify({ chat_id: selectedChat.id, productos_disponibles: productos, localidades_disponibles: localidades })
       });
       if (!extractRes.ok) throw new Error("Error extrayendo datos con IA");
@@ -104,8 +110,8 @@ export default function WhatsappChat() {
       });
       const clientes = await clientesRes.json();
       
-      // Buscar por teléfono (limpiando espacios)
-      const telLimpio = selectedChat.telefono.replace(/[^0-9]/g, '');
+      // Buscar por teléfono (limpiando espacios y sufijo JID)
+      const telLimpio = selectedChat.telefono.replace(/@s\.whatsapp\.net$/i, '').replace(/[^0-9]/g, '');
       const clienteExistente = clientes.find((c: any) => c.telefono && c.telefono.replace(/[^0-9]/g, '') === telLimpio);
       
       if (clienteExistente) {
@@ -118,7 +124,7 @@ export default function WhatsappChat() {
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
           body: JSON.stringify({
             nombre: selectedChat.nombre_contacto || "Cliente WhatsApp",
-            telefono: selectedChat.telefono,
+            telefono: telLimpio,
             direccion: pedidoExtraido.direccion || "Sin dirección",
             localidad_id: localidadId
           })
@@ -155,7 +161,10 @@ export default function WhatsappChat() {
       const mensajeConfirmacion = `*¡Genial!* He registrado tu pedido de ${pedidoExtraido.detalles.length} producto(s). Estaremos en camino a la brevedad. Total a pagar estimado: Efectivo/Transferencia. ¡Gracias por elegir Los 2 Hermanos!`;
       await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/send-message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getToken()}`
+        },
         body: JSON.stringify({ telefono: selectedChat.telefono, mensaje: mensajeConfirmacion })
       });
       

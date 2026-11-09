@@ -164,7 +164,10 @@ export default function ClientesPage() {
     setMensaje("");
     await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/send-message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`
+      },
       body: JSON.stringify({ telefono: chatActivo.telefono, mensaje: text })
     });
   };
@@ -185,7 +188,8 @@ export default function ClientesPage() {
     try {
       // 1. Asegurar que el cliente existe
       let cliente_id = "";
-      const clienteData = { nombre: pedidoForm.nombre, telefono: pedidoForm.telefono, direccion: pedidoForm.direccion, localidad_id: pedidoForm.localidad_id };
+      const telLimpio = pedidoForm.telefono.replace(/@s\.whatsapp\.net$/i, '').replace(/[^0-9]/g, '');
+      const clienteData = { nombre: pedidoForm.nombre, telefono: telLimpio, direccion: pedidoForm.direccion, localidad_id: pedidoForm.localidad_id };
       const clienteRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/clientes/`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` }, body: JSON.stringify(clienteData) });
       if (clienteRes.ok) {
         const c = await clienteRes.json();
@@ -193,9 +197,9 @@ export default function ClientesPage() {
       } else {
         const c_err = await clienteRes.json();
         if (c_err.detail && typeof c_err.detail === 'string' && c_err.detail.includes("ya existe")) {
-          // buscarlo
-          const { data } = await supabase.from('clientes').select('id').eq('telefono', pedidoForm.telefono).single();
-          if (data) cliente_id = data.id;
+          // buscarlo por teléfono limpio o con JID
+          const { data } = await supabase.from('clientes').select('id').in('telefono', [telLimpio, pedidoForm.telefono]).limit(1);
+          if (data && data[0]) cliente_id = data[0].id;
         } else {
           throw new Error("No se pudo crear/validar el cliente");
         }
@@ -231,7 +235,10 @@ export default function ClientesPage() {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/extract-order`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${getToken()}`
+        },
         body: JSON.stringify({
           chat_id: chatActivo.id,
           productos_disponibles: productos,
@@ -273,7 +280,10 @@ export default function ClientesPage() {
 
   const reiniciarBot = async () => {
     if (!confirm('¿Seguro que deseas borrar la sesión actual y generar un nuevo QR?')) return;
-    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/restart`, { method: 'POST' });
+    await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/restart`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
     setBotStatus({ status: 'disconnected' });
     setPairingCode("");
   };
@@ -288,7 +298,10 @@ export default function ClientesPage() {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/pair`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getToken()}`
+        },
         body: JSON.stringify({ numero: pairingNumero.trim() })
       });
       const data = await res.json();

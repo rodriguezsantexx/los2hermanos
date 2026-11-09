@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { getToken } from '@/lib/session';
 
 type Message = {
   id: string;
@@ -48,9 +49,13 @@ export default function SimuladorPage() {
     setIsLoading(true);
 
     try {
+      const token = getToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_BOT_URL || "http://localhost:3005"}/api/simulate-message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           telefono: TELEFONO_PRUEBA,
           mensaje: userText

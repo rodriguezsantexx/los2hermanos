@@ -19,12 +19,66 @@ const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Carpeta de persistencia para credenciales de Baileys (compatible con Railway Volumes)
+const AUTH_FOLDER = process.env.AUTH_FOLDER || path.join(process.cwd(), 'auth_info_baileys');
+
 // Inicializar Servidor Express para comunicarse con el panel web
 const app = express();
-app.use(cors());
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://los2hermanos.up.railway.app,http://localhost:3000,http://localhost:3005')
+    .split(',')
+    .map(o => o.trim());
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(null, true); // fallback tolerante si hay subdominio de preview, pero restringido por token en endpoints sensibles
+        }
+    }
+}));
 app.use(express.json());
 
-app.post('/api/send-message', async (req: any, res: any) => {
+// Middleware de autenticación para endpoints administrativos del bot
+// Verifica el Bearer token de Supabase o una clave interna BOT_API_SECRET
+async function requireAuth(req: any, res: any, next: any) {
+    const botSecret = process.env.BOT_API_SECRET;
+    const apiKeyHeader = req.headers['x-api-key'];
+    if (botSecret && apiKeyHeader === botSecret) {
+        return next();
+    }
+
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+        const token = authHeader.slice(7).trim();
+        if (token) {
+            try {
+                const { data, error } = await supabase.auth.getUser(token);
+                if (!error && data?.user) {
+                    return next();
+                }
+            } catch (e) {
+                console.error('Error validando token en bot:', e);
+            }
+        }
+    }
+
+    // Permitir en desarrollo local desde localhost si no se envió token (ej. simulador CLI)
+    const remoteIp = req.ip || req.connection?.remoteAddress || '';
+    const isLocalhost = remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1';
+    if (isLocalhost && !process.env.RAILWAY_ENVIRONMENT) {
+        return next();
+    }
+
+    return res.status(401).json({ error: 'No autorizado. Se requiere sesión activa.' });
+}
+
+// Helper para limpiar teléfono a solo dígitos (para tabla clientes / pedidos)
+function cleanPhoneDigits(phone: string): string {
+    return String(phone || '').replace(/@s\.whatsapp\.net$/i, '').replace(/[^0-9]/g, '');
+}
+
+app.post('/api/send-message', requireAuth, async (req: any, res: any) => {
     try {
         const { telefono, mensaje } = req.body;
         if (!telefono || !mensaje) {
@@ -44,6 +98,10 @@ app.post('/api/send-message', async (req: any, res: any) => {
                     mensaje: mensaje
                 });
             }
+            // Sincronizar también en memoria por si reactivan Modo IA enseguida
+            if (conversationHistories[telefono]) {
+                conversationHistories[telefono].push({ role: 'assistant', content: mensaje });
+            }
             return res.json({ success: true });
         } else {
             return res.status(500).json({ error: 'WhatsApp no está conectado' });
@@ -54,8 +112,99 @@ app.post('/api/send-message', async (req: any, res: any) => {
     }
 });
 
+// Función compartida para procesar la respuesta de la IA (extraer fotos, confirmar pedido y actualizar historial)
+async function processAIResponseAndConfirmOrder(telefono: string, rawReply: string): Promise<{ replyText: string; imagesToSend: string[] }> {
+    let replyText = rawReply;
+    const imagesToSend: string[] = [];
+
+    const photoRegex = /\[FOTO_([^\]]+)\]/g;
+    let match;
+    while ((match = photoRegex.exec(replyText)) !== null) {
+        const imgPath = match[1].trim();
+        const imgUrl = `${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`;
+        imagesToSend.push(imgUrl);
+        console.log(`[DEBUG] Imagen extraída: ${imgUrl}`);
+    }
+    // Eliminar todas las etiquetas de fotos del texto
+    replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
+
+    // Intercepción de [PEDIDO_CONFIRMADO] (tolerante a bloques markdown ```json)
+    if (replyText.includes('[PEDIDO_CONFIRMADO]')) {
+        try {
+            let jsonStr = replyText.split('[PEDIDO_CONFIRMADO]')[1].trim();
+            jsonStr = jsonStr.replace(/```json/gi, '').replace(/```/g, '').trim();
+            // Extraer desde el primer '{' hasta el último '}' por si el LLM agregó texto extra
+            const firstBrace = jsonStr.indexOf('{');
+            const lastBrace = jsonStr.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+            }
+
+            const pedidoData = JSON.parse(jsonStr);
+            pedidoData.telefono = cleanPhoneDigits(telefono);
+
+            const backendRes = await fetch(`${BACKEND_BASE_URL}/api/pedidos/bot`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(pedidoData)
+            });
+
+            const backendData = await backendRes.json();
+
+            if (!backendRes.ok) {
+                if (backendData.detail === "CERRADO_DOMINGO") {
+                    replyText = "Lo siento, hoy domingo estamos cerrados. 😔 ¡Te esperamos mañana!";
+                } else if (backendData.detail === "CERRADO_DEPOSITO") {
+                    replyText = "Lo siento, nuestro local se encuentra cerrado en este momento. Nuestro horario para retiros es de Lunes a Sábado de 09:00 a 21:00 hs.";
+                } else if (backendData.detail === "CERRADO_REPARTO") {
+                    replyText = "Lo siento, actualmente no estamos en horario de reparto. 🛵 Nuestros horarios de envío son de Lunes a Sábado de 09:00 a 14:00 y de 17:00 a 20:30 hs.";
+                } else if (typeof backendData.detail === "string" && backendData.detail.startsWith("AMBIGUEDAD_PRODUCTO:")) {
+                    const parts = backendData.detail.split(":");
+                    const buscado = parts[1] || "el producto";
+                    const opciones = parts[2] ? parts[2].split(",") : [];
+                    if (opciones.length > 0) {
+                        replyText = `Para "${buscado}", tenemos varias opciones disponibles: ${opciones.join(" o ")}. ¿Cuál de ellas preferís?`;
+                    } else {
+                        replyText = `¿Me podrías confirmar con exactitud qué marca o tipo de "${buscado}" necesitás?`;
+                    }
+                } else if (typeof backendData.detail === "string" && backendData.detail.startsWith("PRODUCTO_NO_ENCONTRADO:")) {
+                    const prodNom = backendData.detail.split(":")[1] || "uno de los productos";
+                    replyText = `Disculpá, no pude identificar "${prodNom}" en nuestro catálogo actual. ¿Me podrías confirmar exactamente qué producto necesitás?`;
+                } else if (typeof backendData.detail === "string" && backendData.detail.startsWith("STOCK_INSUFICIENTE:")) {
+                    const parts = backendData.detail.split(":");
+                    const prodNom = parts[1] || "el producto";
+                    const disponible = parts[2] || "0";
+                    replyText = `Lo siento, en este momento nos quedan solo ${disponible} unidades disponibles de "${prodNom}". ¿Querés que te preparemos esa cantidad o preferís otra opción?`;
+                } else {
+                    replyText = "Ocurrió un error al intentar registrar el pedido. Por favor, intentá de nuevo en unos momentos.";
+                }
+            } else if (backendData.mp_link) {
+                replyText = `¡Pedido confirmado y guardado! 🚀\n\nPodés abonarlo escaneando o tocando el siguiente link de Mercado Pago:\n👉 ${backendData.mp_link}\n\nUna vez realizado, nuestro sistema lo detectará y el chofer saldrá para allá. ¡Muchas gracias!`;
+            } else {
+                const metodoPago = (pedidoData.metodo_pago || "").toLowerCase();
+                if (metodoPago.includes("transferencia")) {
+                    replyText = `¡Pedido confirmado y guardado! 🚀\n\nEl chofer llevará un código QR para que puedas abonar con transferencia en el momento de la entrega. ¡Gracias por elegir Los 2 Hermanos!`;
+                } else {
+                    replyText = `¡Pedido confirmado y guardado exitosamente! 🚀\n\nYa lo anoté en nuestro sistema y el chofer lo llevará a la brevedad. ¡Cualquier otra cosa que necesites, avisame!`;
+                }
+            }
+        } catch (e) {
+            console.error("Error parseando o enviando pedido:", e);
+            replyText = "Ocurrió un error al intentar guardar tu pedido en el sistema. Por favor, intentá confirmarlo nuevamente en unos minutos.";
+        }
+
+        // Actualizar el último mensaje del asistente en memoria para que la IA sepa lo que realmente se le respondió al cliente (ej: desambiguación o falta de stock)
+        const hist = conversationHistories[telefono];
+        if (hist && hist.length > 0 && hist[hist.length - 1].role === 'assistant') {
+            hist[hist.length - 1].content = replyText;
+        }
+    }
+
+    return { replyText, imagesToSend };
+}
+
 // Endpoint para simular un mensaje entrante (ideal para pruebas sin celular)
-app.post('/api/simulate-message', async (req: any, res: any) => {
+app.post('/api/simulate-message', requireAuth, async (req: any, res: any) => {
     try {
         const { telefono, mensaje } = req.body;
         if (!telefono || !mensaje) {
@@ -95,51 +244,11 @@ app.post('/api/simulate-message', async (req: any, res: any) => {
         }
 
         if (modoIa) {
-            let replyText = await getAIResponse(telefono, mensaje);
-            console.log(`[DEBUG-SIM] Respuesta IA (cruda): ${replyText.substring(0, 500)}`);
-            let imagesToSend: string[] = [];
+            const rawReply = await getAIResponse(telefono, mensaje, chatId);
+            console.log(`[DEBUG-SIM] Respuesta IA (cruda): ${rawReply.substring(0, 500)}`);
 
-            const photoRegex = /\[FOTO_([^\]]+)\]/g;
-            let match;
-            while ((match = photoRegex.exec(replyText)) !== null) {
-                const imgPath = match[1];
-                const imgUrl = `${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`;
-                imagesToSend.push(imgUrl);
-                console.log(`[DEBUG-SIM] Imagen extraída: ${imgUrl}`);
-            }
-            // Eliminar todas las etiquetas del texto
-            replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
+            const { replyText, imagesToSend } = await processAIResponseAndConfirmOrder(telefono, rawReply);
             console.log(`[DEBUG-SIM] Tags extraídos: ${imagesToSend.length} | Texto limpio: ${replyText.substring(0, 300)}`);
-            
-            // Intercepción de PEDIDO_CONFIRMADO (Simulador)
-            if (replyText.includes('[PEDIDO_CONFIRMADO]')) {
-                try {
-                    const jsonStr = replyText.split('[PEDIDO_CONFIRMADO]')[1].trim();
-                    const pedidoData = JSON.parse(jsonStr);
-                    pedidoData.telefono = telefono;
-                    
-                    const backendRes = await fetch(`${BACKEND_BASE_URL}/api/pedidos/bot`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(pedidoData)
-                    });
-                    
-                    const backendData = await backendRes.json();
-                    
-                    if (backendData.mp_link) {
-                        replyText = `¡Pedido confirmado y guardado! 🚀\n\nPodés abonarlo acá:\n👉 ${backendData.mp_link}`;
-                    } else {
-                        const metodoPago = (pedidoData.metodo_pago || "").toLowerCase();
-                        if (metodoPago.includes("transferencia")) {
-                            replyText = `¡Pedido confirmado y guardado! 🚀\n\nEl chofer llevará un código QR para que puedas abonar con transferencia en el momento de la entrega.`;
-                        } else {
-                            replyText = `¡Pedido confirmado y guardado exitosamente! 🚀`;
-                        }
-                    }
-                } catch (e) {
-                    replyText = "Error al confirmar el pedido. Intentá de nuevo.";
-                }
-            }
             
             // Soportar múltiples burbujas de texto
             const textMessages = replyText.split('|||').map(m => m.trim()).filter(Boolean);
@@ -177,7 +286,7 @@ app.get('/api/status', (req: any, res: any) => {
 // donde no se puede escanear un QR que aparece en la misma pantalla).
 // El usuario ingresa SOLO su número local (ej: 3515554444) y acá le
 // agregamos automáticamente el prefijo de celular argentino (549).
-app.post('/api/pair', async (req: any, res: any) => {
+app.post('/api/pair', requireAuth, async (req: any, res: any) => {
     try {
         const { numero } = req.body;
         if (!numero) {
@@ -222,7 +331,7 @@ app.post('/api/pair', async (req: any, res: any) => {
 });
 
 // Endpoint para reiniciar la sesión (útil cuando se corrompen las llaves de seguridad)
-app.post('/api/restart', (req: any, res: any) => {
+app.post('/api/restart', requireAuth, (req: any, res: any) => {
     console.log('[API] Solicitud para reiniciar la sesión de WhatsApp');
     if (globalSock) {
         try {
@@ -233,10 +342,10 @@ app.post('/api/restart', (req: any, res: any) => {
     
     // Borrar credenciales corruptas
     try {
-        fs.rmSync('auth_info_baileys', { recursive: true, force: true });
-        console.log('Carpeta auth_info_baileys borrada con éxito.');
+        fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+        console.log(`Carpeta de credenciales (${AUTH_FOLDER}) borrada con éxito.`);
     } catch(e) {
-        console.error('No se pudo borrar auth_info_baileys:', e);
+        console.error('No se pudo borrar la carpeta de credenciales:', e);
     }
     
     botStatus = 'disconnected';
@@ -252,7 +361,7 @@ app.post('/api/restart', (req: any, res: any) => {
     res.json({ success: true, message: 'Reiniciando bot...' });
 });
 
-app.post('/api/extract-order', async (req: any, res: any) => {
+app.post('/api/extract-order', requireAuth, async (req: any, res: any) => {
     try {
         const { chat_id, productos_disponibles, localidades_disponibles } = req.body;
         
@@ -476,27 +585,75 @@ ${productosTexto}
 - SI EL CLIENTE PIDE EXPLÍCITAMENTE UNA FOTO O IMAGEN DE UN PRODUCTO: debes incluir al final de tu respuesta EXACTAMENTE esta etiqueta: [FOTO_id_de_la_foto]. Debes reemplazar "id_de_la_foto" copiando exactamente el "ID_FOTO" que aparece entre paréntesis al lado del precio del producto en el catálogo. Por ejemplo, si el catálogo dice (ID_FOTO: gas/garrafa_15kg_ypf), la etiqueta debe ser [FOTO_gas/garrafa_15kg_ypf]. El sistema interceptará esto y enviará la foto real. NUNCA envíes fotos por defecto si no te las piden.`;
 }
 
-async function getAIResponse(userPhone: string, userMessage: string): Promise<string> {
-    // Si no existe historial para este usuario, lo inicializamos con el prompt del sistema
-    if (!conversationHistories[userPhone]) {
-        const systemPrompt = await getDynamicSystemPrompt();
-        conversationHistories[userPhone] = [
-            { role: 'system', content: systemPrompt }
-        ];
+async function getAIResponse(userPhone: string, userMessage: string, chatId?: string | null): Promise<string> {
+    // Obtenemos siempre el systemPrompt actualizado (para reflejar precios y stock al instante)
+    const systemPrompt = await getDynamicSystemPrompt();
+
+    // Si tenemos chatId en Supabase, reconstruimos los últimos 14 mensajes desde la BD
+    // Esto garantiza que si el bot se reinició o un humano intervino desde la web, la IA tenga el contexto real.
+    let historyMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    if (chatId) {
+        try {
+            const { data: dbMsgs } = await supabase
+                .from('whatsapp_mensajes')
+                .select('es_bot, mensaje')
+                .eq('chat_id', chatId)
+                .order('created_at', { ascending: false })
+                .limit(14);
+
+            if (dbMsgs && dbMsgs.length > 0) {
+                historyMessages = dbMsgs.reverse().map((m: any) => ({
+                    role: (m.es_bot ? 'assistant' : 'user') as 'assistant' | 'user',
+                    content: String(m.mensaje || '')
+                }));
+            }
+        } catch (err) {
+            console.error('Error cargando historial desde Supabase:', err);
+        }
     }
 
-    // Añadimos el nuevo mensaje del usuario al historial
-    conversationHistories[userPhone].push({ role: 'user', content: userMessage });
+    if (historyMessages.length > 0) {
+        // Verificar que el último mensaje sea el actual del usuario; si no, agregarlo
+        const lastMsg = historyMessages[historyMessages.length - 1];
+        if (lastMsg.role !== 'user' || lastMsg.content !== userMessage) {
+            historyMessages.push({ role: 'user', content: userMessage });
+        }
+        conversationHistories[userPhone] = [
+            { role: 'system', content: systemPrompt },
+            ...historyMessages
+        ];
+    } else {
+        // Fallback en memoria si no hubo chatId
+        if (!conversationHistories[userPhone]) {
+            conversationHistories[userPhone] = [
+                { role: 'system', content: systemPrompt }
+            ];
+        } else {
+            conversationHistories[userPhone][0] = { role: 'system', content: systemPrompt };
+        }
+        conversationHistories[userPhone].push({ role: 'user', content: userMessage });
 
-    // Copiamos los mensajes para enviarlos a la IA
+        if (conversationHistories[userPhone].length > 15) {
+            conversationHistories[userPhone] = [
+                conversationHistories[userPhone][0],
+                ...conversationHistories[userPhone].slice(conversationHistories[userPhone].length - 14)
+            ];
+        }
+    }
+
     const messagesToSend = [...conversationHistories[userPhone]];
-    
-    // Si es el primer mensaje del usuario (historial tiene length 2: 1 system + 1 user)
-    if (conversationHistories[userPhone].length === 2) {
-        messagesToSend[1] = {
-            role: 'user', 
-            content: `${userMessage}\n\n[INSTRUCCIÓN DEL SISTEMA: Esta es tu primera respuesta al cliente. DEBES OBLIGATORIAMENTE responder EXACTAMENTE CON ESTE TEXTO, sin agregar nada más:\n"¡Hola! 👋 Soy el asistente de *Los 2 Hermanos*.\n¿Cómo te puedo ayudar hoy? ¿Querés consultar precios, hacer un pedido o tenés alguna otra consulta? ¡Estoy a tu disposición!"]`
-        };
+
+    // Si es el primer mensaje de la conversación y el usuario SOLO saluda (sin pedir nada ni consultar precios),
+    // guiamos a la IA para dar la bienvenida cálida; si ya pide un producto o precio, la dejamos avanzar directo al Paso 2.
+    if (messagesToSend.length === 2) {
+        const cleanMsg = userMessage.trim().toLowerCase();
+        const isOnlyGreeting = /^(hola+|buenas+|buen d[ií]a|buenas tardes|buenas noches|qué tal|que tal|hola buenas|hola buen d[ií]a)[!.,?\s]*$/i.test(cleanMsg);
+        if (isOnlyGreeting) {
+            messagesToSend[1] = {
+                role: 'user',
+                content: `${userMessage}\n\n[INSTRUCCIÓN DEL SISTEMA: El cliente acaba de saludar sin pedir un producto aún. Responde con este saludo de bienvenida:\n"¡Hola! 👋 Soy el asistente de *Los 2 Hermanos*.\n¿Cómo te puedo ayudar hoy? ¿Querés consultar precios, hacer un pedido o tenés alguna otra consulta? ¡Estoy a tu disposición!"]`
+            };
+        }
     }
 
     try {
@@ -507,17 +664,8 @@ async function getAIResponse(userPhone: string, userMessage: string): Promise<st
 
         const reply = completion?.choices?.[0]?.message?.content || 'Lo siento, tuve un problema al procesar tu solicitud.';
         
-        // Añadimos la respuesta del asistente al historial
+        // Añadimos la respuesta del asistente al historial en memoria
         conversationHistories[userPhone].push({ role: 'assistant', content: reply });
-
-        // Para evitar que el historial crezca infinitamente, mantenemos solo los últimos 15 mensajes
-        if (conversationHistories[userPhone].length > 15) {
-            // Preservamos el primer mensaje (system prompt) y los últimos 14
-            conversationHistories[userPhone] = [
-                conversationHistories[userPhone][0],
-                ...conversationHistories[userPhone].slice(conversationHistories[userPhone].length - 14)
-            ];
-        }
 
         return reply;
     } catch (error: any) {
@@ -528,9 +676,16 @@ async function getAIResponse(userPhone: string, userMessage: string): Promise<st
     }
 }
 
+// Contador de intentos para backoff exponencial
+let reconnectAttempts = 0;
+const MAX_RECONNECT_DELAY_MS = 60000; // Tope máximo de 60 segundos
+
 async function connectToWhatsApp() {
-    console.log('Iniciando conexión con WhatsApp...');
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    console.log(`Iniciando conexión con WhatsApp usando directorio: ${AUTH_FOLDER}`);
+    if (!fs.existsSync(AUTH_FOLDER)) {
+        fs.mkdirSync(AUTH_FOLDER, { recursive: true });
+    }
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
 
     const sock = makeWASocket({
         auth: state,
@@ -580,25 +735,31 @@ async function connectToWhatsApp() {
             currentQR = '';
             currentPairingCode = '';
             const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            console.log('Conexión cerrada. Reconectando:', shouldReconnect);
+            const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+            console.log('Conexión cerrada. LoggedOut:', isLoggedOut, '| StatusCode:', statusCode);
             
-            if (shouldReconnect) {
-                connectToWhatsApp();
-            } else {
-                console.log('Sesión cerrada (Logged Out). Borrando credenciales...');
+            if (isLoggedOut) {
+                console.log('Sesión cerrada definitivamente en el celular (Logged Out). Borrando credenciales locales...');
                 try {
-                    fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+                    fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
                 } catch(e) {}
                 pendingPairingNumber = null;
-                // Volvemos a iniciar para generar nuevo QR
-                setTimeout(() => connectToWhatsApp(), 2000);
+                reconnectAttempts = 0;
+                // Iniciamos una única vez para generar un nuevo código QR limpio (sin loop de reconexión)
+                setTimeout(() => connectToWhatsApp(), 3000);
+            } else {
+                // Backoff exponencial con tope de 60 segundos para evitar saturación de red o ban
+                reconnectAttempts++;
+                const delayMs = Math.min(MAX_RECONNECT_DELAY_MS, Math.round(2000 * Math.pow(1.5, reconnectAttempts)));
+                console.log(`Reintentando conexión (intento ${reconnectAttempts}) en ${Math.round(delayMs / 1000)}s...`);
+                setTimeout(() => connectToWhatsApp(), delayMs);
             }
         } else if (connection === 'open') {
             botStatus = 'connected';
             currentQR = '';
             currentPairingCode = '';
             pendingPairingNumber = null;
+            reconnectAttempts = 0; // Resetear intentos al conectar con éxito
             console.log('¡Conectado exitosamente a WhatsApp!');
         }
     });
@@ -621,9 +782,31 @@ async function connectToWhatsApp() {
         
         // Ignorar mensajes de grupos (terminan en @g.us)
         if (remoteJid.endsWith('@g.us')) return;
+
+        // Comportamiento humano: marcar mensaje recibido como leído
+        try {
+            await sock.readMessages([msg.key]);
+        } catch (readErr) {
+            // Silencioso si no soporta lectura
+        }
         
         // Extraer texto del mensaje (puede ser conversation o extendedTextMessage)
         let textMessage = msg.message.conversation || msg.message.extendedTextMessage?.text;
+
+        // Procesar ubicación nativa de WhatsApp (locationMessage o liveLocationMessage)
+        const locMsg = msg.message.locationMessage || msg.message.liveLocationMessage;
+        if (!textMessage && locMsg) {
+            const lat = locMsg.degreesLatitude;
+            const lng = locMsg.degreesLongitude;
+            const locName = (locMsg as any).name || '';
+            const locAddress = (locMsg as any).address || '';
+            const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+            const extraInfo = [locName, locAddress].filter(Boolean).join(' - ');
+            textMessage = extraInfo
+                ? `[Ubicación enviada por pin de WhatsApp: ${extraInfo} (${mapsUrl})]`
+                : `[Ubicación enviada por pin de WhatsApp: (${mapsUrl}) - Sin nombre de calle escrito]`;
+            console.log(`Ubicación recibida de ${remoteJid}: ${textMessage}`);
+        }
 
         // Procesar mensajes de audio
         if (msg.message.audioMessage) {
@@ -704,73 +887,28 @@ async function connectToWhatsApp() {
 
             // 3. Responder solo si está en Modo IA
             if (modoIa) {
-                // Enviar "Escribiendo..."
+                // Simulación humana: presencia de "Escribiendo..." y delay realista de lectura/pensamiento
                 await sock.sendPresenceUpdate('composing', remoteJid);
+                const humanReadDelay = Math.floor(Math.random() * 1500) + 1500; // entre 1.5s y 3.0s
+                await new Promise(resolve => setTimeout(resolve, humanReadDelay));
 
-                // Obtener respuesta de la IA
-                let replyText = await getAIResponse(remoteJid, textMessage);
-                console.log(`[DEBUG] Respuesta IA (cruda): ${replyText.substring(0, 500)}`);
+                // Obtener respuesta de la IA (sincronizada con el historial de Supabase y catálogo fresco)
+                const rawReply = await getAIResponse(remoteJid, textMessage, chatId);
+                console.log(`[DEBUG] Respuesta IA (cruda): ${rawReply.substring(0, 500)}`);
 
-                let imagesToSend: string[] = [];
-                const photoRegex = /\[FOTO_([^\]]+)\]/g;
-                let match;
-                while ((match = photoRegex.exec(replyText)) !== null) {
-                    const imgPath = match[1];
-                    const imgUrl = `${FRONT_MEDIA_BASE_URL}/flyers/${imgPath}.jpeg`;
-                    imagesToSend.push(imgUrl);
-                    console.log(`[DEBUG] Imagen extraída: ${imgUrl}`);
-                }
-                replyText = replyText.replace(/\[FOTO_([^\]]+)\]/g, '').trim();
+                const { replyText, imagesToSend } = await processAIResponseAndConfirmOrder(remoteJid, rawReply);
                 console.log(`[DEBUG] Tags extraídos: ${imagesToSend.length} | Texto limpio: ${replyText.substring(0, 300)}`);
 
-                // Intercepción de PEDIDO_CONFIRMADO
-                if (replyText.includes('[PEDIDO_CONFIRMADO]')) {
-                    try {
-                        const jsonStr = replyText.split('[PEDIDO_CONFIRMADO]')[1].trim();
-                        const pedidoData = JSON.parse(jsonStr);
-                        pedidoData.telefono = remoteJid.replace('@s.whatsapp.net', '');
-                        
-                        // Enviar al backend de Python
-                        const backendRes = await fetch(`${BACKEND_BASE_URL}/api/pedidos/bot`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(pedidoData)
-                        });
-                        
-                        const backendData = await backendRes.json();
-                        
-                        if (!backendRes.ok) {
-                            if (backendData.detail === "CERRADO_DOMINGO") {
-                                replyText = "Lo siento, hoy domingo estamos cerrados. 😔 ¡Te esperamos mañana!";
-                            } else if (backendData.detail === "CERRADO_DEPOSITO") {
-                                replyText = "Lo siento, nuestro local se encuentra cerrado en este momento. Nuestro horario para retiros es de Lunes a Sábado de 09:00 a 21:00 hs.";
-                            } else if (backendData.detail === "CERRADO_REPARTO") {
-                                replyText = "Lo siento, actualmente no estamos en horario de reparto. 🛵 Nuestros horarios de envío son de Lunes a Sábado de 09:00 a 14:00 y de 17:00 a 20:30 hs.";
-                            } else {
-                                throw new Error("Error del backend: " + (backendData.detail || "Error desconocido"));
-                            }
-                        } else if (backendData.mp_link) {
-                            replyText = `¡Pedido confirmado y guardado! 🚀\n\nPodés abonarlo escaneando o tocando el siguiente link de Mercado Pago:\n👉 ${backendData.mp_link}\n\nUna vez realizado, nuestro sistema lo detectará y el chofer saldrá para allá. ¡Muchas gracias!`;
-                        } else {
-                            const metodoPago = (pedidoData.metodo_pago || "").toLowerCase();
-                            if (metodoPago.includes("transferencia")) {
-                                replyText = `¡Pedido confirmado y guardado! 🚀\n\nEl chofer llevará un código QR para que puedas abonar con transferencia en el momento de la entrega. ¡Gracias por elegir Los 2 Hermanos!`;
-                            } else {
-                                replyText = `¡Pedido confirmado y guardado exitosamente! 🚀\n\nYa lo anoté en nuestro sistema y el chofer lo llevará a la brevedad. ¡Cualquier otra cosa que necesites, avisame!`;
-                            }
-                        }
-                    } catch (e) {
-                        console.error("Error parseando o enviando pedido:", e);
-                        replyText = "Ocurrió un error al intentar guardar tu pedido en el sistema. Por favor, intentá confirmarlo nuevamente en unos minutos.";
-                    }
-                }
-
-                // Enviar todas las imágenes al usuario
+                // Enviar todas las imágenes al usuario con pausas naturales
                 for (const imgUrl of imagesToSend) {
                     try {
                         console.log(`[DEBUG] Enviando imagen: ${imgUrl}`);
+                        await sock.sendPresenceUpdate('composing', remoteJid);
+                        await new Promise(resolve => setTimeout(resolve, 1400));
                         await sock.sendMessage(remoteJid, { image: { url: imgUrl } });
                         console.log(`[DEBUG] Imagen enviada OK: ${imgUrl}`);
+                        // Pausa de 1s luego de enviar imagen
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     } catch (imgErr) {
                         console.error(`[ERROR] Fallo al enviar imagen ${imgUrl}:`, imgErr);
                     }
@@ -778,11 +916,20 @@ async function connectToWhatsApp() {
                 
                 if (replyText) {
                     const textBubbles = replyText.split('|||').map(m => m.trim()).filter(Boolean);
-                    for (const textBubble of textBubbles) {
+                    for (let i = 0; i < textBubbles.length; i++) {
+                        const textBubble = textBubbles[i];
+                        
+                        // Simular escritura proporcional al tamaño del mensaje (entre 1.2s y 3.0s)
+                        await sock.sendPresenceUpdate('composing', remoteJid);
+                        const typingDelay = Math.min(3000, Math.max(1200, textBubble.length * 20));
+                        await new Promise(resolve => setTimeout(resolve, typingDelay));
+
                         await sock.sendMessage(remoteJid, { text: textBubble });
-                        // Pequeña pausa para simular escritura si hay múltiples mensajes
-                        if (textBubbles.length > 1) {
-                            await new Promise(resolve => setTimeout(resolve, 800));
+
+                        // Pausa natural entre burbujas consecutivas
+                        if (i < textBubbles.length - 1) {
+                            const pauseBetween = Math.floor(Math.random() * 800) + 800; // 800ms a 1600ms
+                            await new Promise(resolve => setTimeout(resolve, pauseBetween));
                         }
                     }
                 }
